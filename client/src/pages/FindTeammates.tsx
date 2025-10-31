@@ -15,8 +15,9 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Search, Users, Briefcase, Home, ExternalLink, MessageCircle, ArrowLeft } from "lucide-react";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { useChat } from "@/hooks/useChat";
 
 interface User {
   id: string;
@@ -52,11 +53,15 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
   const [experienceRange, setExperienceRange] = useState<string>("all");
   const [flatBlock, setFlatBlock] = useState("");
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { openChat } = useChat();
 
   const buildQueryString = () => {
     const params = new URLSearchParams();
+    
+    if (userId) {
+      params.append('excludeUserId', userId);
+    }
     
     if (selectedTech.length > 0) {
       selectedTech.forEach(tech => params.append('techStack', tech));
@@ -80,7 +85,7 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
   };
 
   const { data, isLoading, refetch } = useQuery<{ users: User[] }>({
-    queryKey: ['/api/users/search', selectedTech, experienceRange, flatBlock],
+    queryKey: ['/api/users/search', userId, selectedTech, experienceRange, flatBlock],
     queryFn: async () => {
       const queryString = buildQueryString();
       const url = queryString ? `/api/users/search?${queryString}` : '/api/users/search';
@@ -120,7 +125,7 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
   };
 
   const startChatMutation = useMutation({
-    mutationFn: async (otherUserId: string) => {
+    mutationFn: async (user: User) => {
       if (!idToken) {
         throw new Error('Please log in to start a chat');
       }
@@ -130,19 +135,28 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
           'Authorization': `Bearer ${idToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ otherUserId }),
+        body: JSON.stringify({ otherUserId: user.id }),
       });
       if (!response.ok) throw new Error('Failed to create conversation');
-      return response.json();
+      return { ...await response.json(), user };
     },
-    onSuccess: () => {
-      toast({
-        title: "Chat started!",
-        description: "Redirecting to messages...",
+    onSuccess: (data) => {
+      const conversationId = data.conversation.id;
+      const user = data.user;
+      
+      // Open chat popup instead of redirecting
+      openChat(conversationId, {
+        id: user.id,
+        fullName: user.fullName,
+        profilePhotoUrl: user.profilePhotoUrl,
+        company: user.company,
+        flatNumber: user.flatNumber,
       });
-      setTimeout(() => {
-        setLocation('/chat');
-      }, 500);
+      
+      toast({
+        title: "Chat opened!",
+        description: `Now chatting with ${user.fullName}`,
+      });
     },
     onError: (error: any) => {
       toast({
@@ -153,13 +167,13 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
     },
   });
 
-  const handleStartChat = (otherUserId: string) => {
-    startChatMutation.mutate(otherUserId);
+  const handleStartChat = (user: User) => {
+    startChatMutation.mutate(user);
   };
 
   if (selectedUser) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background pb-20 md:pb-0">
         <div className="max-w-4xl mx-auto px-6 py-8">
           <Button 
             variant="ghost" 
@@ -198,7 +212,7 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
                   <div className="flex flex-wrap gap-2">
                     {userId && idToken && userId !== selectedUser.id && (
                       <Button
-                        onClick={() => handleStartChat(selectedUser.id)}
+                        onClick={() => handleStartChat(selectedUser)}
                         disabled={startChatMutation.isPending}
                         data-testid="button-start-chat"
                       >
@@ -261,7 +275,7 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
               <Users className="w-6 h-6 text-primary" />
               <h1 className="text-2xl font-bold">Find Teammates</h1>
             </div>
-            <Link href="/dashboard">
+            <Link href="/dashboard" className="hidden md:block">
               <Button variant="outline" data-testid="button-dashboard">
                 Back to Dashboard
               </Button>

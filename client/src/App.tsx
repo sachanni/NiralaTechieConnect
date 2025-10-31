@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -9,8 +9,44 @@ import LandingPage from "@/components/LandingPage";
 import PhoneVerification from "@/components/PhoneVerification";
 import RegistrationForm, { type RegistrationData } from "@/components/RegistrationForm";
 import Dashboard from "@/components/Dashboard";
+import Profile from "@/pages/Profile";
+import Settings from "@/pages/Settings";
 import FindTeammates from "@/pages/FindTeammates";
 import Chat from "@/pages/Chat";
+import JobBoard from "@/pages/JobBoard";
+import PostJob from "@/pages/PostJob";
+import MyJobs from "@/pages/MyJobs";
+import MyApplications from "@/pages/MyApplications";
+import ViewApplicants from "@/pages/ViewApplicants";
+import IdeaWall from "@/pages/IdeaWall";
+import IdeaDetails from "@/pages/IdeaDetails";
+import MyIdeas from "@/pages/MyIdeas";
+import MyTeamApplications from "@/pages/MyTeamApplications";
+import SkillSwap from "@/pages/SkillSwap";
+import MySessions from "@/pages/MySessions";
+import Events from "@/pages/Events";
+import EventDetails from "@/pages/EventDetails";
+import EventQRCode from "@/pages/EventQRCode";
+import EventScanner from "@/pages/EventScanner";
+import EventAttendees from "@/pages/EventAttendees";
+import MyEvents from "@/pages/MyEvents";
+import CreateEditEvent from "@/pages/CreateEditEvent";
+import AdminDashboard from "@/pages/AdminDashboard";
+import AdminApprovals from "@/pages/AdminApprovals";
+import AdminBroadcasts from "@/pages/AdminBroadcasts";
+import AdminExports from "@/pages/AdminExports";
+import AdminActivityLog from "@/pages/AdminActivityLog";
+import Forum from "@/pages/Forum";
+import ForumCategory from "@/pages/ForumCategory";
+import AskQuestion from "@/pages/AskQuestion";
+import QuestionDetail from "@/pages/QuestionDetail";
+import { BroadcastBanner } from "@/components/BroadcastBanner";
+import { AuthProvider } from "@/hooks/useAuth";
+import { ChatProvider } from "@/contexts/ChatContext";
+import ChatPopupManager from "@/components/ChatPopupManager";
+import BottomNav from "@/components/BottomNav";
+import OnboardingWizard from "@/components/OnboardingWizard";
+import GlobalSearch from "@/components/GlobalSearch";
 import NotFound from "@/pages/not-found";
 
 type AppState = 'landing' | 'phone' | 'registration' | 'authenticated';
@@ -20,9 +56,67 @@ function Router() {
   const [idToken, setIdToken] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [userData, setUserData] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem('idToken');
+    const storedUser = localStorage.getItem('userData');
+    
+    if (storedToken && storedUser) {
+      try {
+        const user = JSON.parse(storedUser);
+        setIdToken(storedToken);
+        setUserData(user);
+        setAppState('authenticated');
+      } catch (error) {
+        console.error('Error restoring auth state:', error);
+        localStorage.removeItem('idToken');
+        localStorage.removeItem('userData');
+      }
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (appState !== 'authenticated') return;
+
+    const refreshToken = async () => {
+      try {
+        const { getAuth } = await import('firebase/auth');
+        const auth = getAuth();
+        const currentUser = auth.currentUser;
+        
+        if (currentUser) {
+          const freshToken = await currentUser.getIdToken(true);
+          setIdToken(freshToken);
+          localStorage.setItem('idToken', freshToken);
+          console.log('Token refreshed successfully');
+        }
+      } catch (error) {
+        console.error('Token refresh failed:', error);
+        toast({
+          title: "Session Expired",
+          description: "Please log in again",
+          variant: "destructive",
+        });
+        localStorage.removeItem('idToken');
+        localStorage.removeItem('userData');
+        setAppState('landing');
+        setLocation('/');
+      }
+    };
+
+    const interval = setInterval(refreshToken, 50 * 60 * 1000);
+    
+    const timeoutId = setTimeout(refreshToken, 5000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeoutId);
+    };
+  }, [appState, toast, setLocation]);
 
   const handleGetStarted = () => {
     setAppState('phone');
@@ -50,7 +144,10 @@ function Router() {
       
       if (data.userExists && data.user) {
         setUserData(data.user);
+        setIdToken(token);
         setAppState('authenticated');
+        localStorage.setItem('idToken', token);
+        localStorage.setItem('userData', JSON.stringify(data.user));
         setLocation('/dashboard');
         toast({
           title: "Welcome back!",
@@ -93,6 +190,8 @@ function Router() {
       const user = await response.json();
       setUserData(user);
       setAppState('authenticated');
+      localStorage.setItem('idToken', idToken);
+      localStorage.setItem('userData', JSON.stringify(user));
       setLocation('/dashboard');
       
       toast({
@@ -138,22 +237,151 @@ function Router() {
   }
 
   if (appState === 'authenticated' && userData) {
+    const handleOnboardingComplete = async () => {
+      const updatedUser = { ...userData, onboardingCompleted: 1 };
+      setUserData(updatedUser);
+      localStorage.setItem('userData', JSON.stringify(updatedUser));
+    };
+
     return (
-      <Switch>
-        <Route path="/dashboard">
-          <Dashboard user={userData} />
-        </Route>
-        <Route path="/find-teammates">
-          <FindTeammates userId={userData.id} idToken={idToken} />
-        </Route>
-        <Route path="/chat">
-          <Chat userId={userData.id} idToken={idToken} />
-        </Route>
-        <Route path="/">
-          <Dashboard user={userData} />
-        </Route>
-        <Route component={NotFound} />
-      </Switch>
+      <AuthProvider initialUser={userData} initialToken={idToken}>
+        <ChatProvider>
+          <BroadcastBanner />
+          <div className="hidden md:block fixed top-4 left-1/2 -translate-x-1/2 z-40 w-full max-w-md px-4">
+            <GlobalSearch idToken={idToken} />
+          </div>
+          <ChatPopupManager />
+          <BottomNav />
+          <OnboardingWizard
+            open={userData.onboardingCompleted === 0}
+            onComplete={handleOnboardingComplete}
+            userId={userData.id}
+            idToken={idToken}
+          />
+          <Switch>
+          {/* Admin routes - must be first for proper matching */}
+          <Route path="/admin/activity-log">
+            <AdminActivityLog />
+          </Route>
+          <Route path="/admin/exports">
+            <AdminExports />
+          </Route>
+          <Route path="/admin/broadcasts">
+            <AdminBroadcasts />
+          </Route>
+          <Route path="/admin/approvals">
+            <AdminApprovals />
+          </Route>
+          <Route path="/admin">
+            <AdminDashboard />
+          </Route>
+          
+          {/* Job routes */}
+          <Route path="/jobs/:id/applicants">
+            <ViewApplicants idToken={idToken} />
+          </Route>
+          <Route path="/post-job">
+            <PostJob idToken={idToken} />
+          </Route>
+          <Route path="/my-jobs">
+            <MyJobs userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/my-applications">
+            <MyApplications userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/jobs">
+            <JobBoard userId={userData.id} idToken={idToken} />
+          </Route>
+          
+          {/* Idea routes */}
+          <Route path="/ideas/:id">
+            <IdeaDetails userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/my-ideas">
+            <MyIdeas userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/my-team-applications">
+            <MyTeamApplications idToken={idToken} />
+          </Route>
+          <Route path="/ideas">
+            <IdeaWall userId={userData.id} idToken={idToken} />
+          </Route>
+          
+          {/* Skill Swap routes */}
+          <Route path="/my-sessions">
+            <MySessions userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/skill-swap">
+            <SkillSwap userId={userData.id} idToken={idToken} />
+          </Route>
+          
+          {/* Events routes */}
+          <Route path="/events/create">
+            <CreateEditEvent userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/events/:id/edit">
+            <CreateEditEvent userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/events/:id/scan">
+            <EventScanner userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/events/:id/qr-code">
+            <EventQRCode userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/events/:id/attendees">
+            <EventAttendees userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/events/:id">
+            <EventDetails userId={userData.id} idToken={idToken} />
+          </Route>
+          
+          {/* Forum routes */}
+          <Route path="/forum/ask">
+            <AskQuestion idToken={idToken} />
+          </Route>
+          <Route path="/forum/post/:id">
+            <QuestionDetail />
+          </Route>
+          <Route path="/forum/category/:slug">
+            <ForumCategory />
+          </Route>
+          <Route path="/forum">
+            <Forum idToken={idToken} />
+          </Route>
+          <Route path="/my-events">
+            <MyEvents userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/events">
+            <Events userId={userData.id} idToken={idToken} />
+          </Route>
+          
+          {/* Other routes */}
+          <Route path="/profile">
+            <Profile user={userData} userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/settings">
+            <Settings idToken={idToken} />
+          </Route>
+          <Route path="/dashboard">
+            <Dashboard user={userData} userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/find-teammates">
+            <FindTeammates userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/chat">
+            <Chat userId={userData.id} idToken={idToken} />
+          </Route>
+          
+          {/* Default route */}
+          <Route path="/">
+            <Dashboard user={userData} userId={userData.id} idToken={idToken} />
+          </Route>
+          
+          {/* 404 catch-all */}
+          <Route component={NotFound} />
+        </Switch>
+        </ChatProvider>
+      </AuthProvider>
     );
   }
 

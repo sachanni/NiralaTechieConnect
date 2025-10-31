@@ -1,276 +1,122 @@
 # Nirala Techie Community Platform
 
 ## Overview
-
-Nirala Techie is a community platform designed for IT professionals within a residential society. The platform enables members to register via phone authentication, create profiles showcasing their technical expertise, and connect with fellow developers. It features a gamification system with points and badges to encourage engagement, along with a modern, developer-friendly interface inspired by Linear and GitHub design patterns.
+Nirala Techie is a community platform for IT professionals within a residential society, designed to foster professional networking and collaboration. It enables users to create profiles, showcase skills, and connect with peers. Key features include phone authentication, gamification (points, badges), a job board, an idea wall for project collaboration, a skill-swap system for mentorship, and an event management system. The platform aims to provide a modern, engaging experience inspired by leading professional platforms.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
+Mobile UX Priority: Top-notch mobile experience is critical since no native app will be developed - mobile-first approach required.
 
 ## System Architecture
 
-### Frontend Architecture
+### Frontend
+- **Framework**: React 18 with TypeScript, using Vite for tooling.
+- **UI/UX**: Utilizes Shadcn/ui (Radix UI based) and Tailwind CSS for styling, incorporating custom design tokens and supporting light/dark modes. The aesthetic is inspired by Linear and GitHub, with Inter and JetBrains Mono as primary fonts.
+- **State Management**: React hooks for local UI state, and TanStack Query for server-side state and data fetching.
+- **Routing**: Wouter is used for lightweight client-side routing.
+- **Application Structure**: A single-page application design manages authenticated and unauthenticated user states.
+- **Navigation**: Desktop view includes a "Dashboard" button in the Profile page header for easy navigation back to the main dashboard. Mobile users navigate via the bottom navigation bar.
 
-**Framework & Build System**
-- **React 18** with TypeScript for type-safe component development
-- **Vite** as the build tool and development server, providing fast HMR (Hot Module Replacement)
-- **Wouter** for lightweight client-side routing instead of React Router
-- **TanStack Query (React Query)** for server state management and data fetching
+### Backend
+- **Server**: Express.js on Node.js, written in TypeScript.
+- **API**: RESTful architecture with JSON data exchange, secured using Bearer token authentication. Multer handles file uploads.
+- **Authentication**: Firebase Authentication manages phone OTP, with Firebase Admin SDK for server-side token verification.
+- **Authorization**: A simple model where authenticated users generally have equal permissions for core functionalities.
 
-**UI Component System**
-- **Shadcn/ui** component library built on Radix UI primitives
-- **Tailwind CSS** for utility-first styling with custom design tokens
-- Custom color system supporting light/dark modes via CSS variables
-- Design inspiration from Linear (clean, modern) and GitHub (developer-friendly) patterns
-- Typography: Inter font for UI, JetBrains Mono for code/tech elements
+### Data Management
+- **Database**: PostgreSQL, hosted on Neon (serverless), with Drizzle ORM for type-safe interactions.
+- **Schema**: Comprehensive schema covering users, jobs (with attachments), applications, messaging, ideas, skill swaps, broadcasts, admin actions, and events.
+- **File Storage**: 
+  - Profile photos: `uploads/profiles/` (5MB limit, JPEG/PNG/GIF/WebP)
+  - Resumes: Application uploads (5MB limit, PDF/DOC/DOCX)
+  - Job attachments: `uploads/job_attachments/` (10MB limit, JPG/PNG/PDF) - allows users to upload company job posting images/PDFs from WhatsApp groups
+  - All managed by Multer with strict format and size validation
 
-**State Management Approach**
-- Component-level state with React hooks for UI state
-- TanStack Query for server state caching and synchronization
-- No global state management library needed due to simple app flow
-
-**Application Flow**
-- Single-page application with authenticated and unauthenticated states
-- Unauthenticated: landing → phone verification → registration
-- Authenticated: dashboard ↔ find teammates (with full routing)
-- State transitions managed via local component state in App.tsx
-- Authentication token passed through component props
-- Wouter routing for authenticated pages (/dashboard, /find-teammates)
-
-### Backend Architecture
-
-**Server Framework**
-- **Express.js** on Node.js for REST API endpoints
-- TypeScript throughout for type safety
-- ESM (ES Modules) module system
-
-**API Design Pattern**
-- RESTful endpoints under `/api` prefix
-- JSON request/response format
-- Bearer token authentication for protected routes
-- File upload handling via Multer middleware for profile photos
-
-**Key Endpoints**
-- `POST /api/auth/verify` - Verify Firebase ID token and check user existence
-- `POST /api/users/register` - Create new user profile
-- `POST /api/users/upload-photo` - Upload profile photo (multipart/form-data)
-- `GET /api/users/search` - Search and filter users by tech stack, experience, flat block
-- `GET /api/users/:id` - Get individual user profile by ID
-
-**Authentication Flow**
-1. Client obtains ID token from Firebase Authentication (phone OTP)
-2. Client sends ID token to backend for verification
-3. Backend validates token with Firebase Admin SDK
-4. Backend extracts phone number from verified token
-5. Backend checks if user exists or proceeds with registration
-
-### Data Storage
-
-**Database**
-- **PostgreSQL** via Neon serverless (connection pooling)
-- **Drizzle ORM** for type-safe database queries and migrations
-- Schema-first approach with TypeScript types inferred from Drizzle schema
-
-**Database Schema**
-- Single `users` table containing all user profile information
-- Fields: id (UUID), phoneNumber (unique), fullName, flatNumber, email (unique), company, techStack (array), yearsOfExperience, linkedinUrl, githubUrl, profilePhotoUrl, points, badges (array), createdAt
-- Array columns for techStack and badges stored as PostgreSQL array type
-
-**Storage Strategy**
-- In-memory storage implementation (`MemStorage`) for development/testing
-- Production uses PostgreSQL through Drizzle ORM
-- Profile photos stored in filesystem at `attached_assets/uploads/` directory
-- Photo URLs stored as relative paths in database
-
-### Authentication & Authorization
-
-**Phone Authentication**
-- **Firebase Authentication** for phone number verification with OTP
-- Client-side: Firebase Web SDK handles reCAPTCHA and OTP flow
-- Server-side: Firebase Admin SDK verifies ID tokens
-
-**Security Implementation**
-- Firebase service account credentials stored in `FIREBASE_SERVICE_ACCOUNT` environment variable
-- ID tokens include phone number claim used for user identification
-- No session management - stateless token verification per request
-- Profile photo uploads require valid ID token in Authorization header
-
-**Authorization Model**
-- Simple authenticated/unauthenticated model
-- All authenticated users have equal permissions
-- User identification via phone number extracted from verified tokens
-
-### File Upload System
-
-**Profile Photo Handling**
-- **Multer** middleware for multipart form data processing
-- File size limit: 5MB per image
-- Allowed formats: JPEG, JPG, PNG, GIF, WebP
-- Server-side validation of file type via MIME type and extension checking
-- Unique filenames generated using UUID to prevent collisions
-- Photos stored in `attached_assets/uploads/` directory
+### Core Features
+- **User Management**: Phone authentication via Firebase, multi-step registration, user profiles with tech stack and professional details.
+- **Community & Collaboration**:
+    - **Find Teammates**: Search and filter members by skills and location, with WhatsApp integration for direct contact.
+    - **In-App Messaging**: Real-time one-on-one chat with WebSocket integration.
+    - **Job Board**: Comprehensive job posting and application system with:
+        - **80+ Tech Stack Options** organized in 10 categories: Frontend Development, Backend Development, Mobile Development, QA & Testing (Selenium, Cypress, Jest, Playwright), Cloud & Infrastructure, Databases & Data, AI & Machine Learning, Architecture & Design, Leadership & Management, Specialized Skills
+        - **7 Experience Levels**: Entry (0-2 years), Mid (2-5 years), Senior (5-8 years), Lead (8-12 years), Principal/Architect (12-15 years), Executive (15-20 years), Director+ (20+ years)
+        - **Job Attachments**: Upload job posting images or PDFs (10MB limit, JPG/PNG/PDF) for sharing WhatsApp group job postings
+        - Application tracking and applicant management for job posters
+        - Mobile-optimized interface with responsive layouts
+    - **Idea Wall**: Platform for posting, discovering, and collaborating on ideas, including upvoting, commenting, and team formation features.
+    - **Skill Swap**: System for users to define skills they can teach and want to learn, facilitating mentor discovery, direct messaging with mentors before booking, session booking (virtual with Google Meet integration or in-person), and a review system.
+    - **Tech Forum**: **Experience-based discussion platform** designed to leverage senior professionals' wisdom that AI cannot replicate. Unlike traditional technical Q&A (which ChatGPT handles well), this forum focuses on real-world experience, career insights, and human mentorship.
+        - **8 Experience-Based Categories**:
+            1. **Career & Growth** (📈) - Advancing from senior to principal/architect/director roles, salary negotiations, promotions
+            2. **System Design & Architecture** (🏗️) - Review real production architectures, scalability challenges, design patterns at scale
+            3. **War Stories** (⚔️) - Production incidents, major failures/successes, lessons learned from the trenches
+            4. **Leadership & Management** (👔) - Managing teams, navigating office politics, hiring, firing, org dynamics
+            5. **Interview Prep** (💼) - Real experiences at FAANG/top companies, interview tips from both sides of the table
+            6. **Code Review Sessions** (👀) - Get your actual code reviewed by 15-20 year veterans, pair programming sessions
+            7. **Company Culture & Insights** (🏢) - Working at Google vs Amazon vs startups, company comparisons, culture insights
+            8. **Office Hours** (🎓) - Schedule 1:1 mentorship time with experts, ask anything sessions
+        - **Expert-Focused Features**: Post types (Question, Architecture Review, War Story, Office Hours), expert-only request flags, experience badges (Junior/Mid/Senior/Expert/Veteran based on years)
+        - **Community Features**: Threaded replies (1-level deep), upvote/downvote system, best answer marking, spam reporting, points/badges for contributions
+        - **Moderation**: Integrated admin moderation for spam reports and content quality
+- **Events**: Full event management system including creation, RSVP, QR code-based check-in (with points awarded), and attendee management for organizers.
+- **Settings**: Comprehensive user settings and preferences management:
+    - **Account Status**: Account deactivation/reactivation toggle with confirmation dialog. Deactivated accounts are hidden from searches while preserving all user data.
+    - **Privacy Controls**: Profile visibility (everyone/members/private), message preferences (everyone/connections/nobody), contact information display toggles (show/hide email and phone on profile page).
+    - **Notification Preferences**: Granular in-app notification controls for 6 categories: Job Board, Messages, Skill Swap, Ideas, Events, and Forum. Preferences stored as JSON in database.
+    - **Auto-save**: All settings changes save automatically with instant feedback via toast notifications.
+    - **Mobile-first**: Responsive design with touch-friendly switches and bottom-padding for mobile navigation bar.
+- **Profile Privacy**: Email and phone number are displayed on the Profile page only when the user enables "Show Email on Profile" or "Show Phone on Profile" in Settings. This gives users full control over their contact information visibility.
+- **Admin Dashboard**: Secure administrative interface for analytics, content moderation (idea approvals, forum reports), broadcasting announcements, data export, and an activity log.
 
 ## External Dependencies
 
 ### Third-Party Services
-
-**Firebase (Authentication)**
-- Purpose: Phone number authentication with OTP verification
-- Integration: Firebase Web SDK (client) + Firebase Admin SDK (server)
-- Configuration: Requires API key, project ID, app ID on client; service account JSON on server
-
-**Neon Database (PostgreSQL)**
-- Purpose: Serverless PostgreSQL database hosting
-- Integration: Connection via `@neondatabase/serverless` package with WebSocket support
-- Configuration: `DATABASE_URL` environment variable for connection string
+- **Firebase**: For phone authentication and administration.
+- **Neon Database**: Provides serverless PostgreSQL hosting.
+- **Google Calendar API**: Integrated for generating Google Meet links and managing event invitations for Skill Swap sessions.
 
 ### Key NPM Dependencies
+- **UI**: `@radix-ui/*`, `tailwindcss`, `class-variance-authority`, `canvas-confetti` (for celebratory animations).
+- **Forms & Validation**: `react-hook-form`, `@hookform/resolvers`, `zod`.
+- **Database ORM**: `drizzle-orm`, `drizzle-kit`, `@neondatabase/serverless`.
+- **Authentication**: `firebase`, `firebase-admin`.
+- **File Uploads**: `multer`.
+- **QR Code**: `qrcode` (generation), `html5-qrcode` (scanning).
+- **Development Tools**: `vite`, `tsx`, `esbuild`.
 
-**UI & Styling**
-- `@radix-ui/*` - Accessible, unstyled UI primitives (20+ components)
-- `tailwindcss` - Utility-first CSS framework
-- `class-variance-authority` - Type-safe variant management for components
-- `canvas-confetti` - Celebration effects on dashboard
+### Environment Variables
+- `DATABASE_URL`
+- `FIREBASE_SERVICE_ACCOUNT`
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_APP_ID`
 
-**Form Management**
-- `react-hook-form` - Form state and validation
-- `@hookform/resolvers` - Integration with Zod validation
-- `zod` - Schema validation (via drizzle-zod)
+## Known Issues & Configuration
 
-**Database & ORM**
-- `drizzle-orm` - TypeScript ORM
-- `drizzle-kit` - Database migration tooling
-- `@neondatabase/serverless` - Neon PostgreSQL client with WebSocket support
+### Google Calendar Integration (Virtual Skill Swap Sessions)
+**Status:** ⚠️ Requires Admin Configuration
 
-**Authentication**
-- `firebase` - Client-side authentication SDK
-- `firebase-admin` - Server-side token verification
+**Issue:** Virtual skill swap sessions cannot create Google Meet links because the Google Calendar integration has insufficient permissions.
 
-**Development Tools**
-- `vite` - Build tool and dev server
-- `tsx` - TypeScript execution for development
-- `esbuild` - Production bundling for server code
-- `@replit/*` - Replit-specific development plugins
+**Current Permissions (Read-Only):**
+- `calendar.events.public.readonly`
+- `calendar.freebusy`
+- `calendar.acls.readonly`
 
-### Environment Variables Required
+**Required Permissions:**
+- `calendar.events` (to create events with Google Meet links)
 
-- `DATABASE_URL` - PostgreSQL connection string (Neon)
-- `FIREBASE_SERVICE_ACCOUNT` - Firebase Admin service account JSON
-- `VITE_FIREBASE_API_KEY` - Firebase client API key
-- `VITE_FIREBASE_PROJECT_ID` - Firebase project identifier
-- `VITE_FIREBASE_APP_ID` - Firebase app identifier
+**Temporary Workaround:**
+- Booking virtual sessions will show an error: "Unable to create virtual meeting"
+- Users can book in-person sessions instead
+- Invalid meeting links have been removed from the database
 
-## Features
+**Solution for Admin:**
+1. Go to Replit Secrets/Tools panel
+2. Reconnect Google Calendar integration
+3. Ensure OAuth scopes include `https://www.googleapis.com/auth/calendar.events`
+4. Test by booking a virtual skill swap session
 
-### 1. Phone Authentication & Registration
-- Firebase phone OTP verification
-- Multi-step registration form (4 steps): Basic info → Professional details → Tech stack → Profile photo
-- Automatic profile photo upload with drag-and-drop support
-- Gamification: 50 points awarded on registration
-- Tech stack badges automatically assigned based on skills
-
-### 2. Dashboard
-- Personalized welcome with confetti celebration
-- Profile overview with photo, company, experience
-- Points and level progress tracking
-- Badge showcase
-- Quick links to LinkedIn and GitHub profiles
-- Navigation to Find Teammates feature
-
-### 3. Find Teammates (Member Search & Discovery)
-- **Purpose**: Connect IT professionals within the residential society based on skills and location
-- **Route**: `/find-teammates` (authenticated users only)
-
-**Search & Filter Capabilities:**
-- **Tech Stack Filter**: Multi-select checkboxes for 25+ technologies (React, Python, AWS, etc.)
-- **Experience Filter**: Dropdown with ranges (0-2, 3-5, 5+ years)
-- **Flat Block Filter**: Text input to find neighbors by building block (e.g., "T27", "T17")
-- Real-time query updates with TanStack Query caching
-- Clear filters button to reset all selections
-
-**Member Discovery:**
-- Responsive grid of member cards showing:
-  - Profile photo with fallback initials
-  - Full name and flat number
-  - Company and years of experience
-  - Top 4 tech stack badges (with "+N more" indicator)
-- Click any member card to view full profile
-
-**Profile View:**
-- Complete member details with all tech stack badges
-- Community points and earned badges
-- **WhatsApp Connect Button**: Opens WhatsApp with pre-filled connection message
-- LinkedIn profile link (if available)
-- Back to search navigation
-
-**Technical Implementation:**
-- Backend: PostgreSQL array overlap search for tech stack filtering
-- Frontend: Optimistic UI updates with React Query
-- Database queries use Drizzle ORM with proper indexing
-- WhatsApp deep linking: `https://wa.me/{phone}?text={message}`
-
-**UX Features:**
-- Hover elevation effects on cards
-- Loading states with skeleton loaders
-- Empty state messaging when no members match filters
-- Smooth transitions between list and profile views
-- Mobile-responsive design with touch-friendly targets
-
-**Security:**
-- Public member discovery (no authentication required for viewing)
-- Phone numbers used only for WhatsApp links, not displayed in UI
-- Profile data limited to professional information only
-
-### 4. In-App Messaging System
-- **Purpose**: Real-time chat communication between community members
-- **Route**: `/chat` (authenticated users only)
-
-**Core Features:**
-- One-on-one conversations between members
-- Real-time message delivery via WebSocket
-- Unread message indicators with badge counts
-- Conversation history with timestamps
-- "Start Chat" button in member profiles (Find Teammates)
-
-**Database Schema:**
-- `conversations` table: Tracks conversations between two users with lastMessageAt timestamp
-- `messages` table: Stores individual messages with content, sender, read status, and timestamps
-- Foreign key relationships ensure data integrity
-
-**API Endpoints:**
-- `POST /api/conversations/create` - Create or retrieve conversation between two users
-- `GET /api/conversations` - Get all conversations for authenticated user with unread counts
-- `POST /api/messages/send` - Send a message (max 5000 characters)
-- `GET /api/messages/:conversationId` - Retrieve messages in a conversation
-- `POST /api/messages/:conversationId/read` - Mark messages as read
-- `GET /api/messages/unread/count` - Get total unread message count
-
-**Real-Time Communication:**
-- WebSocket server at `/ws` path with token-based authentication
-- Client subscribes to specific conversations for real-time updates
-- Message broadcasting to all participants in a conversation
-- Automatic reconnection handling on client side
-
-**Security & Authorization:**
-- **Conversation Participation Validation**: All endpoints verify user is a participant before allowing access
-- **WebSocket Authorization**: Subscription and message sending restricted to conversation participants
-- Message content validation (non-empty, max 5000 characters)
-- Bearer token authentication required for all chat operations
-- 403 Forbidden responses for unauthorized access attempts
-- Authorization enforced at storage layer for defense in depth
-
-**UX Features:**
-- Conversation list sorted by most recent activity
-- Unread message badges on conversations
-- Real-time message delivery without page refresh
-- Smooth scrolling to latest messages
-- Timestamp formatting (time, yesterday, or date)
-- Message grouping by sender with visual distinction
-- Loading states and error handling
-
-**Technical Implementation:**
-- Frontend: React with WebSocket integration and TanStack Query for data management
-- Backend: Express with ws package for WebSocket handling
-- Storage: Participant validation in both MemStorage and PostgresStorage implementations
-- Type-safe message handling with Drizzle ORM schema validation
+**Code Location:**
+- Backend integration: `server/googleCalendar.ts`
+- API endpoint: `POST /api/skill-swap/sessions` in `server/routes.ts`

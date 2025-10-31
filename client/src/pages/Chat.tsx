@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { MessageCircle, Send, ArrowLeft } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuth } from "firebase/auth";
 import { format } from "date-fns";
@@ -50,6 +50,11 @@ export default function Chat({ userId, idToken }: ChatProps) {
   const [messageInput, setMessageInput] = useState("");
   const [ws, setWs] = useState<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [location] = useLocation();
+
+  // Get conversation ID from URL query parameter
+  const urlParams = new URLSearchParams(location.split('?')[1]);
+  const conversationIdFromUrl = urlParams.get('conversation');
 
   const { data: conversationsData, refetch: refetchConversations } = useQuery<{ conversations: Conversation[] }>({
     queryKey: ['/api/conversations'],
@@ -64,7 +69,22 @@ export default function Chat({ userId, idToken }: ChatProps) {
     },
   });
 
-  const { data: messagesData, refetch: refetchMessages } = useQuery<{ messages: Message[] }>({
+  // Auto-select conversation from URL parameter
+  useEffect(() => {
+    if (conversationIdFromUrl && conversationsData?.conversations) {
+      const conversation = conversationsData.conversations.find(
+        (c) => c.id === conversationIdFromUrl
+      );
+      if (conversation) {
+        // Only auto-select if we don't have a selection or if the URL changed
+        if (!selectedConversation || selectedConversation.id !== conversationIdFromUrl) {
+          setSelectedConversation(conversation);
+        }
+      }
+    }
+  }, [conversationIdFromUrl, conversationsData?.conversations, selectedConversation?.id]);
+
+  const { data: messagesData, refetch: refetchMessages, isLoading: messagesLoading } = useQuery<{ messages: Message[] }>({
     queryKey: ['/api/messages', selectedConversation?.id],
     enabled: !!selectedConversation,
     queryFn: async () => {
@@ -195,9 +215,10 @@ export default function Chat({ userId, idToken }: ChatProps) {
     }
   };
 
-  if (selectedConversation && messagesData) {
+  // Show chat view if conversation is selected (even while loading messages)
+  if (selectedConversation) {
     return (
-      <div className="flex flex-col h-screen bg-background">
+      <div className="relative flex flex-col h-screen bg-background">
         <div className="border-b p-4 flex items-center gap-3">
           <Button
             variant="ghost"
@@ -223,9 +244,17 @@ export default function Chat({ userId, idToken }: ChatProps) {
           </div>
         </div>
 
-        <ScrollArea className="flex-1 p-4">
-          <div className="space-y-4">
-            {messagesData.messages.map((message) => {
+        <ScrollArea className="flex-1 p-4 pb-32 md:pb-4">
+          {messagesLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading messages...</p>
+              </div>
+            </div>
+          ) : messagesData ? (
+            <div className="space-y-4">
+              {messagesData.messages.map((message) => {
               const isCurrentUser = message.senderId === userId;
               return (
                 <div
@@ -249,12 +278,13 @@ export default function Chat({ userId, idToken }: ChatProps) {
                   </div>
                 </div>
               );
-            })}
-            <div ref={messagesEndRef} />
-          </div>
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+          ) : null}
         </ScrollArea>
 
-        <div className="border-t p-4">
+        <div className="fixed md:relative bottom-16 md:bottom-0 left-0 right-0 border-t p-4 bg-background z-40">
           <div className="flex gap-2">
             <Input
               placeholder="Type a message..."
@@ -290,7 +320,7 @@ export default function Chat({ userId, idToken }: ChatProps) {
               <MessageCircle className="w-6 h-6 text-primary" />
               <h1 className="text-2xl font-bold">Messages</h1>
             </div>
-            <Link href="/dashboard">
+            <Link href="/dashboard" className="hidden md:block">
               <Button variant="outline" data-testid="button-dashboard">
                 Back to Dashboard
               </Button>
