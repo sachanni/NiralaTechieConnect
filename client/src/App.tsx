@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import LandingPage from "@/components/LandingPage";
+import CategorySelector from "@/pages/CategorySelector";
 import PhoneVerification from "@/components/PhoneVerification";
 import RegistrationForm, { type RegistrationData } from "@/components/RegistrationForm";
 import Dashboard from "@/components/Dashboard";
@@ -40,6 +41,15 @@ import Forum from "@/pages/Forum";
 import ForumCategory from "@/pages/ForumCategory";
 import AskQuestion from "@/pages/AskQuestion";
 import QuestionDetail from "@/pages/QuestionDetail";
+import ServicesHub from "@/pages/ServicesHub";
+import ServiceListingPage from "@/pages/ServiceListingPage";
+import LostAndFoundPage from "@/pages/LostAndFoundPage";
+import CommunityAnnouncementsPage from "@/pages/CommunityAnnouncementsPage";
+import ActivityFeed from "@/pages/ActivityFeed";
+import PhotoGallery from "@/pages/PhotoGallery";
+import Marketplace from "@/pages/Marketplace";
+import ToolRental from "@/pages/ToolRental";
+import AdvertiseServices from "@/pages/AdvertiseServices";
 import { BroadcastBanner } from "@/components/BroadcastBanner";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ChatProvider } from "@/contexts/ChatContext";
@@ -49,10 +59,13 @@ import OnboardingWizard from "@/components/OnboardingWizard";
 import GlobalSearch from "@/components/GlobalSearch";
 import NotFound from "@/pages/not-found";
 
-type AppState = 'landing' | 'phone' | 'registration' | 'authenticated';
+type AppState = 'landing' | 'category' | 'phone' | 'registration' | 'authenticated';
+type AuthMode = 'login' | 'register';
 
 function Router() {
   const [appState, setAppState] = useState<AppState>('landing');
+  const [authMode, setAuthMode] = useState<AuthMode>('register');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [idToken, setIdToken] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [userData, setUserData] = useState<any>(null);
@@ -118,7 +131,18 @@ function Router() {
     };
   }, [appState, toast, setLocation]);
 
-  const handleGetStarted = () => {
+  const handleGetStarted = (mode: AuthMode) => {
+    setAuthMode(mode);
+    // Skip category selection for login - go straight to phone verification
+    if (mode === 'login') {
+      setAppState('phone');
+    } else {
+      setAppState('category');
+    }
+  };
+
+  const handleCategorySelected = (categories: string[]) => {
+    setSelectedCategories(categories);
     setAppState('phone');
   };
 
@@ -143,6 +167,7 @@ function Router() {
       const data = await response.json();
       
       if (data.userExists && data.user) {
+        // User exists in database
         setUserData(data.user);
         setIdToken(token);
         setAppState('authenticated');
@@ -154,7 +179,19 @@ function Router() {
           description: `Logged in as ${data.user.fullName}`,
         });
       } else {
-        setAppState('registration');
+        // User doesn't exist in database
+        if (authMode === 'login') {
+          // User tried to login but account doesn't exist
+          toast({
+            title: "Account Not Found",
+            description: "No account found with this phone number. Please register first.",
+            variant: "destructive",
+          });
+          setAppState('landing');
+        } else {
+          // User is registering - proceed to registration flow
+          setAppState('registration');
+        }
       }
     } catch (error: any) {
       console.error('Auth verification error:', error);
@@ -163,6 +200,7 @@ function Router() {
         description: error.message || "Authentication failed",
         variant: "destructive",
       });
+      setAppState('landing');
     } finally {
       setLoading(false);
     }
@@ -221,14 +259,20 @@ function Router() {
     );
   }
 
-  if (appState === 'landing' || appState === 'phone' || appState === 'registration') {
+  if (appState === 'landing' || appState === 'category' || appState === 'phone' || appState === 'registration') {
     return (
       <Switch>
         <Route path="/">
           {appState === 'landing' && <LandingPage onGetStarted={handleGetStarted} />}
+          {appState === 'category' && <CategorySelector onContinue={handleCategorySelected} />}
           {appState === 'phone' && <PhoneVerification onVerified={handlePhoneVerified} />}
           {appState === 'registration' && (
-            <RegistrationForm phoneNumber={phoneNumber} idToken={idToken} onComplete={handleRegistrationComplete} />
+            <RegistrationForm 
+              phoneNumber={phoneNumber} 
+              idToken={idToken} 
+              selectedCategories={selectedCategories}
+              onComplete={handleRegistrationComplete} 
+            />
           )}
         </Route>
         <Route component={NotFound} />
@@ -353,6 +397,39 @@ function Router() {
           </Route>
           <Route path="/events">
             <Events userId={userData.id} idToken={idToken} />
+          </Route>
+          
+          {/* Service routes */}
+          <Route path="/services/:categoryId">
+            <ServiceListingPage />
+          </Route>
+          <Route path="/services">
+            <ServicesHub />
+          </Route>
+          
+          {/* Community Features */}
+          <Route path="/lost-and-found">
+            <LostAndFoundPage idToken={idToken} />
+          </Route>
+          <Route path="/announcements">
+            <CommunityAnnouncementsPage idToken={idToken} />
+          </Route>
+          <Route path="/activity-feed">
+            <ActivityFeed userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/photo-gallery">
+            <PhotoGallery userId={userData.id} idToken={idToken} />
+          </Route>
+          
+          {/* Phase 2 Features */}
+          <Route path="/marketplace">
+            <Marketplace />
+          </Route>
+          <Route path="/tool-rental">
+            <ToolRental />
+          </Route>
+          <Route path="/advertise">
+            <AdvertiseServices />
           </Route>
           
           {/* Other routes */}

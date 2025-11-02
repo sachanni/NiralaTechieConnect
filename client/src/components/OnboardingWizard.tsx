@@ -27,9 +27,14 @@ interface OnboardingWizardProps {
 }
 
 const availableSkills = [
-  "React", "Angular", "Vue", "Node.js", "Python", "Java", "Go", "TypeScript",
-  "JavaScript", "AWS", "Azure", "Docker", "Kubernetes", "MongoDB", "PostgreSQL",
-  "GraphQL", "REST APIs", "System Design", "Microservices", "DevOps"
+  "Doctor Consultations", "Physiotherapy", "Yoga & Fitness", "Mental Health Support",
+  "Home Catering", "Tiffin Services", "Baking", "Cooking Classes",
+  "Academic Tutoring", "Music Classes", "Dance Classes", "Language Classes",
+  "Beauty Salon Services", "Mehendi", "Hairstyling", "Spa & Massage",
+  "Web Development", "Mobile Apps", "Data Science", "Cloud & DevOps",
+  "Career Counseling", "Tech Mentoring", "Interview Prep", "Resume Writing",
+  "Babysitting", "Kids Activities", "Playdate Coordination",
+  "Event Planning", "Birthday Parties", "Decoration Services", "Photography"
 ];
 
 export default function OnboardingWizard({ open, onComplete, userId, idToken }: OnboardingWizardProps) {
@@ -89,8 +94,8 @@ export default function OnboardingWizard({ open, onComplete, userId, idToken }: 
         origin: { y: 0.6 }
       });
       toast({
-        title: "Welcome to Nirala Techie! 🎉",
-        description: "You're all set to connect with your tech neighbors",
+        title: "Welcome to Nirala Estate! 🎉",
+        description: "You're all set to connect with your neighbors",
       });
       onComplete();
     },
@@ -146,10 +151,10 @@ export default function OnboardingWizard({ open, onComplete, userId, idToken }: 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-2xl">
             <Sparkles className="w-6 h-6 text-primary" />
-            Welcome to Nirala Techie!
+            Welcome to Nirala Estate!
           </DialogTitle>
           <DialogDescription>
-            Let's get you connected with your tech neighbors in 3 quick steps
+            Let's get you connected with your neighbors in 3 quick steps
           </DialogDescription>
         </DialogHeader>
 
@@ -168,10 +173,10 @@ export default function OnboardingWizard({ open, onComplete, userId, idToken }: 
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-lg font-semibold">
               <Users className="w-5 h-5 text-primary" />
-              Meet Your Tech Neighbors
+              Discover Your Neighbors
             </div>
             <p className="text-sm text-muted-foreground">
-              Here are some residents nearby with tech skills. You can connect with them for projects, mentorship, or coffee chats!
+              Meet your neighbors and see what services they offer. Connect for help, exchange skills, or just say hello!
             </p>
             
             <div className="space-y-3">
@@ -193,11 +198,12 @@ export default function OnboardingWizard({ open, onComplete, userId, idToken }: 
                         )}
                         <div className="flex-1">
                           <h4 className="font-semibold">{neighbor.fullName}</h4>
-                          <p className="text-sm text-muted-foreground">
-                            {neighbor.company} • {neighbor.flatNumber}
-                          </p>
+                          <p className="text-sm text-muted-foreground">{neighbor.flatNumber}</p>
+                          {neighbor.company && (
+                            <p className="text-sm text-muted-foreground">{neighbor.company}</p>
+                          )}
                           <div className="flex flex-wrap gap-1 mt-2">
-                            {neighbor.techStack.slice(0, 3).map((tech) => (
+                            {neighbor.techStack?.slice(0, 3).map((tech) => (
                               <Badge key={tech} variant="secondary" className="text-xs">
                                 {tech}
                               </Badge>
@@ -230,8 +236,8 @@ export default function OnboardingWizard({ open, onComplete, userId, idToken }: 
             <div className="space-y-4">
               <div>
                 <Label className="text-base font-semibold mb-3 block">I can teach:</Label>
-                <div className="flex flex-wrap gap-2">
-                  {availableSkills.slice(0, 12).map((skill) => (
+                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+                  {availableSkills.map((skill) => (
                     <div
                       key={skill}
                       onClick={() => toggleSkillTeach(skill)}
@@ -249,8 +255,8 @@ export default function OnboardingWizard({ open, onComplete, userId, idToken }: 
 
               <div>
                 <Label className="text-base font-semibold mb-3 block">I want to learn:</Label>
-                <div className="flex flex-wrap gap-2">
-                  {availableSkills.slice(0, 12).map((skill) => (
+                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+                  {availableSkills.map((skill) => (
                     <div
                       key={skill}
                       onClick={() => toggleSkillLearn(skill)}
@@ -273,57 +279,81 @@ export default function OnboardingWizard({ open, onComplete, userId, idToken }: 
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-lg font-semibold">
               <MessageSquare className="w-5 h-5 text-primary" />
-              Take Your First Step
+              Explore the Community
             </div>
             <p className="text-sm text-muted-foreground">
-              Here's how you can start connecting with your neighbors:
+              Here's what you can do on the platform:
             </p>
 
-            <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
               <Card className="hover:shadow-md transition-shadow cursor-pointer border-primary/20">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <MessageSquare className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-1">Join the Tech Forum</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Share war stories, get career advice from 15-20 year veterans, and ask for architecture reviews
-                      </p>
-                    </div>
+                <CardContent className="p-3">
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">🍰</div>
+                    <h4 className="font-semibold text-sm mb-1">Food & Services</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Find home cooks, tiffin services, bakers
+                    </p>
                   </div>
                 </CardContent>
               </Card>
 
               <Card className="hover:shadow-md transition-shadow cursor-pointer border-primary/20">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Users className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-1">Find Teammates</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Discover neighbors with skills for your next side project or startup idea
-                      </p>
-                    </div>
+                <CardContent className="p-3">
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">🛒</div>
+                    <h4 className="font-semibold text-sm mb-1">Marketplace</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Buy, sell, exchange items with neighbors
+                    </p>
                   </div>
                 </CardContent>
               </Card>
 
               <Card className="hover:shadow-md transition-shadow cursor-pointer border-primary/20">
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Lightbulb className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold mb-1">Book a Skill Swap Session</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Learn from a neighbor or teach what you know - all happening in your building!
-                      </p>
-                    </div>
+                <CardContent className="p-3">
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">🔍</div>
+                    <h4 className="font-semibold text-sm mb-1">Lost & Found</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Post lost or found items
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="hover:shadow-md transition-shadow cursor-pointer border-primary/20">
+                <CardContent className="p-3">
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">📢</div>
+                    <h4 className="font-semibold text-sm mb-1">Announcements</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Stay updated with community news
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="hover:shadow-md transition-shadow cursor-pointer border-primary/20">
+                <CardContent className="p-3">
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">🎉</div>
+                    <h4 className="font-semibold text-sm mb-1">Events</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Join festivals and community gatherings
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="hover:shadow-md transition-shadow cursor-pointer border-primary/20">
+                <CardContent className="p-3">
+                  <div className="text-center">
+                    <div className="text-2xl mb-2">💬</div>
+                    <h4 className="font-semibold text-sm mb-1">Connect</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Chat, share ideas, find help
+                    </p>
                   </div>
                 </CardContent>
               </Card>

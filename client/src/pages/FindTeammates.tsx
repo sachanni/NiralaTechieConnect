@@ -18,6 +18,7 @@ import { Search, Users, Briefcase, Home, ExternalLink, MessageCircle, ArrowLeft 
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useChat } from "@/hooks/useChat";
+import PresenceIndicator from "@/components/PresenceIndicator";
 
 interface User {
   id: string;
@@ -93,6 +94,18 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
       if (!response.ok) throw new Error('Failed to fetch users');
       return response.json();
     },
+  });
+
+  // Fetch online users for "Online Now" section
+  const { data: onlineUsers } = useQuery<{ users: User[] }>({
+    queryKey: ['/api/presence/online', userId],
+    queryFn: async () => {
+      const excludeParam = userId ? `?excludeUserId=${userId}` : '';
+      const response = await fetch(`/api/presence/online${excludeParam}`);
+      if (!response.ok) throw new Error('Failed to fetch online users');
+      return response.json();
+    },
+    refetchInterval: 30000, // Refresh every 30 seconds
   });
 
   const toggleTech = (tech: string) => {
@@ -188,20 +201,26 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
           <Card>
             <CardHeader>
               <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
-                <Avatar className="w-24 h-24">
-                  <AvatarImage src={selectedUser.profilePhotoUrl || undefined} />
-                  <AvatarFallback className="text-2xl bg-primary/10 text-primary">
-                    {getInitials(selectedUser.fullName)}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar className="w-24 h-24">
+                    <AvatarImage src={selectedUser.profilePhotoUrl || undefined} />
+                    <AvatarFallback className="text-2xl bg-primary/10 text-primary">
+                      {getInitials(selectedUser.fullName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="absolute bottom-1 right-1">
+                    <PresenceIndicator userId={selectedUser.id} idToken={idToken} size="lg" />
+                  </div>
+                </div>
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-3 mb-2">
                     <CardTitle className="text-2xl">{selectedUser.fullName}</CardTitle>
                     <Badge variant="secondary">{selectedUser.flatNumber}</Badge>
                   </div>
-                  <p className="text-muted-foreground mb-3">
+                  <p className="text-muted-foreground mb-2">
                     {selectedUser.company} • {selectedUser.yearsOfExperience} years experience
                   </p>
+                  <PresenceIndicator userId={selectedUser.id} idToken={idToken} showLastSeen className="mb-3" />
                   <div className="flex flex-wrap gap-2 mb-4">
                     {selectedUser.techStack.map((tech) => (
                       <Badge key={tech} variant="outline" className="font-mono text-xs">
@@ -362,6 +381,50 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
           </Card>
 
           <div>
+            {/* Online Now Section */}
+            {onlineUsers && onlineUsers.users.length > 0 && (
+              <Card className="mb-6 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border-green-200 dark:border-green-800">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    Online Now
+                    <Badge variant="secondary" className="ml-auto">
+                      {onlineUsers.users.length}
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-green-200 dark:scrollbar-thumb-green-800">
+                    {onlineUsers.users.map((user) => (
+                      <div
+                        key={user.id}
+                        onClick={() => setSelectedUser(user)}
+                        className="flex-shrink-0 cursor-pointer group"
+                      >
+                        <div className="flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-background/50 transition-colors">
+                          <div className="relative">
+                            <Avatar className="w-14 h-14 border-2 border-green-500">
+                              <AvatarImage src={user.profilePhotoUrl || undefined} />
+                              <AvatarFallback className="bg-primary/10 text-primary text-sm">
+                                {getInitials(user.fullName)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="absolute -bottom-1 -right-1">
+                              <div className="w-4 h-4 rounded-full bg-green-500 border-2 border-background"></div>
+                            </div>
+                          </div>
+                          <div className="text-center max-w-[80px]">
+                            <p className="text-xs font-medium truncate">{user.fullName.split(' ')[0]}</p>
+                            <p className="text-[10px] text-muted-foreground truncate">{user.flatNumber}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {isLoading ? (
               <div className="text-center py-12">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
@@ -381,12 +444,17 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
                   >
                     <CardContent className="p-6">
                       <div className="flex gap-4">
-                        <Avatar className="w-16 h-16">
-                          <AvatarImage src={user.profilePhotoUrl || undefined} />
-                          <AvatarFallback className="bg-primary/10 text-primary">
-                            {getInitials(user.fullName)}
-                          </AvatarFallback>
-                        </Avatar>
+                        <div className="relative">
+                          <Avatar className="w-16 h-16">
+                            <AvatarImage src={user.profilePhotoUrl || undefined} />
+                            <AvatarFallback className="bg-primary/10 text-primary">
+                              {getInitials(user.fullName)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="absolute bottom-0 right-0">
+                            <PresenceIndicator userId={user.id} idToken={idToken} size="md" />
+                          </div>
+                        </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2 mb-1">
                             <h3 className="font-semibold text-lg" data-testid={`text-name-${user.id}`}>
@@ -396,12 +464,13 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
                               {user.flatNumber}
                             </Badge>
                           </div>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                             <Briefcase className="w-3 h-3" />
                             <span>{user.company}</span>
                             <span>•</span>
                             <span>{user.yearsOfExperience} years</span>
                           </div>
+                          <PresenceIndicator userId={user.id} idToken={idToken} showLastSeen className="mb-2" />
                           <div className="flex flex-wrap gap-1">
                             {user.techStack.slice(0, 4).map((tech) => (
                               <Badge key={tech} variant="outline" className="text-xs font-mono">

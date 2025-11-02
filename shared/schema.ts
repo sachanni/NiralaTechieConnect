@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -9,12 +9,24 @@ export const users = pgTable("users", {
   fullName: text("full_name").notNull(),
   flatNumber: text("flat_number").notNull(),
   email: text("email").notNull().unique(),
-  company: text("company").notNull(),
-  techStack: text("tech_stack").array().notNull(),
-  yearsOfExperience: integer("years_of_experience").notNull(),
+  dateOfBirth: text("date_of_birth"),
+  towerName: text("tower_name"),
+  societyName: text("society_name").notNull().default('Nirala Estate'),
+  residencyType: text("residency_type"),
+  residentSince: text("resident_since"),
+  serviceCategories: text("service_categories").array().notNull().default(sql`ARRAY[]::text[]`),
+  categoryRoles: jsonb("category_roles").notNull().default(sql`'{}'::jsonb`).$type<Record<string, ('provider' | 'seeker')[]>>(),
+  occupation: text("occupation"),
+  employmentStatus: text("employment_status"),
+  briefIntro: text("brief_intro"),
+  professionalWebsite: text("professional_website"),
+  company: text("company"),
+  techStack: text("tech_stack").array().default(sql`ARRAY[]::text[]`),
+  yearsOfExperience: integer("years_of_experience"),
   linkedinUrl: text("linkedin_url"),
   githubUrl: text("github_url"),
   profilePhotoUrl: text("profile_photo_url"),
+  bio: text("bio"),
   skillsToTeach: text("skills_to_teach").array().notNull().default(sql`ARRAY[]::text[]`),
   skillsToLearn: text("skills_to_learn").array().notNull().default(sql`ARRAY[]::text[]`),
   mentorRating: integer("mentor_rating").notNull().default(0),
@@ -27,6 +39,8 @@ export const users = pgTable("users", {
   isAdmin: integer("is_admin").notNull().default(0),
   onboardingCompleted: integer("onboarding_completed").notNull().default(0),
   isActive: integer("is_active").notNull().default(1),
+  isOnline: integer("is_online").notNull().default(0),
+  lastSeenAt: timestamp("last_seen_at"),
   profileVisibility: text("profile_visibility").notNull().default('everyone'),
   allowMessages: text("allow_messages").notNull().default('everyone'),
   showEmail: integer("show_email").notNull().default(0),
@@ -518,3 +532,512 @@ export type InsertForumVote = z.infer<typeof insertForumVoteSchema>;
 export type ForumVote = typeof forumVotes.$inferSelect;
 export type InsertForumReport = z.infer<typeof insertForumReportSchema>;
 export type ForumReport = typeof forumReports.$inferSelect;
+
+export const discussionThreads = pgTable("discussion_threads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  authorId: varchar("author_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  tags: text("tags").array().notNull().default(sql`ARRAY[]::text[]`),
+  likeCount: integer("like_count").notNull().default(0),
+  commentCount: integer("comment_count").notNull().default(0),
+  viewCount: integer("view_count").notNull().default(0),
+  isPinned: integer("is_pinned").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const discussionComments = pgTable("discussion_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  threadId: varchar("thread_id").notNull().references(() => discussionThreads.id),
+  authorId: varchar("author_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  likeCount: integer("like_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const discussionLikes = pgTable("discussion_likes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  targetType: text("target_type").notNull(),
+  targetId: varchar("target_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const galleries = pgTable("galleries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  creatorId: varchar("creator_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  tags: text("tags").array().notNull().default(sql`ARRAY[]::text[]`),
+  likeCount: integer("like_count").notNull().default(0),
+  imageCount: integer("image_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const galleryImages = pgTable("gallery_images", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  galleryId: varchar("gallery_id").notNull().references(() => galleries.id),
+  imageUrl: text("image_url").notNull(),
+  caption: text("caption"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const galleryLikes = pgTable("gallery_likes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  galleryId: varchar("gallery_id").notNull().references(() => galleries.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const advertisements = pgTable("advertisements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  advertiserId: varchar("advertiser_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  serviceCategory: text("service_category").notNull(),
+  imageUrl: text("image_url"),
+  servicePageContent: text("service_page_content").notNull(),
+  pricing: text("pricing"),
+  contactInfo: text("contact_info").notNull(),
+  duration: integer("duration").notNull(),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  status: text("status").notNull().default('pending'),
+  viewCount: integer("view_count").notNull().default(0),
+  clickCount: integer("click_count").notNull().default(0),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const adPayments = pgTable("ad_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  advertisementId: varchar("advertisement_id").notNull().references(() => advertisements.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull().default('INR'),
+  razorpayOrderId: text("razorpay_order_id").notNull(),
+  razorpayPaymentId: text("razorpay_payment_id"),
+  razorpaySignature: text("razorpay_signature"),
+  status: text("status").notNull().default('pending'),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const adAnalytics = pgTable("ad_analytics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  advertisementId: varchar("advertisement_id").notNull().references(() => advertisements.id),
+  userId: varchar("user_id").references(() => users.id),
+  action: text("action").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const activityFeed = pgTable("activity_feed", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  activityType: text("activity_type").notNull(),
+  targetType: text("target_type").notNull(),
+  targetId: varchar("target_id").notNull(),
+  content: text("content").notNull(),
+  metadata: text("metadata").notNull().default('{}'),
+  likeCount: integer("like_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const activityLikes = pgTable("activity_likes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  activityId: varchar("activity_id").notNull().references(() => activityFeed.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const serviceRatings = pgTable("service_ratings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  providerId: varchar("provider_id").notNull().references(() => users.id),
+  reviewerId: varchar("reviewer_id").notNull().references(() => users.id),
+  serviceCategory: text("service_category").notNull(),
+  rating: integer("rating").notNull(),
+  review: text("review"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const userPresence = pgTable("user_presence", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique().references(() => users.id),
+  status: text("status").notNull().default('offline'),
+  lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDiscussionThreadSchema = createInsertSchema(discussionThreads).omit({
+  id: true,
+  likeCount: true,
+  commentCount: true,
+  viewCount: true,
+  isPinned: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertDiscussionCommentSchema = createInsertSchema(discussionComments).omit({
+  id: true,
+  likeCount: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertDiscussionLikeSchema = createInsertSchema(discussionLikes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertGallerySchema = createInsertSchema(galleries).omit({
+  id: true,
+  likeCount: true,
+  imageCount: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertGalleryImageSchema = createInsertSchema(galleryImages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertGalleryLikeSchema = createInsertSchema(galleryLikes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAdvertisementSchema = createInsertSchema(advertisements).omit({
+  id: true,
+  startDate: true,
+  endDate: true,
+  status: true,
+  viewCount: true,
+  clickCount: true,
+  rejectionReason: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAdPaymentSchema = createInsertSchema(adPayments).omit({
+  id: true,
+  razorpayPaymentId: true,
+  razorpaySignature: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertAdAnalyticsSchema = createInsertSchema(adAnalytics).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertActivityFeedSchema = createInsertSchema(activityFeed).omit({
+  id: true,
+  likeCount: true,
+  createdAt: true,
+});
+
+export const insertActivityLikeSchema = createInsertSchema(activityLikes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertServiceRatingSchema = createInsertSchema(serviceRatings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserPresenceSchema = createInsertSchema(userPresence).omit({
+  id: true,
+  lastSeenAt: true,
+  updatedAt: true,
+});
+
+export const lostAndFound = pgTable("lost_and_found", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  category: text("category").notNull(),
+  location: text("location"),
+  contactInfo: text("contact_info"),
+  images: text("images").array().default(sql`ARRAY[]::text[]`),
+  status: text("status").notNull().default('open'),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const communityAnnouncements = pgTable("community_announcements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  images: text("images").array().default(sql`ARRAY[]::text[]`),
+  status: text("status").notNull().default('pending'),
+  priority: text("priority").notNull().default('normal'),
+  expiresAt: timestamp("expires_at"),
+  viewCount: integer("view_count").notNull().default(0),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertLostAndFoundSchema = createInsertSchema(lostAndFound).omit({
+  id: true,
+  status: true,
+  resolvedAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCommunityAnnouncementSchema = createInsertSchema(communityAnnouncements).omit({
+  id: true,
+  status: true,
+  viewCount: true,
+  approvedBy: true,
+  approvedAt: true,
+  rejectionReason: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDiscussionThread = z.infer<typeof insertDiscussionThreadSchema>;
+export type DiscussionThread = typeof discussionThreads.$inferSelect;
+export type InsertDiscussionComment = z.infer<typeof insertDiscussionCommentSchema>;
+export type DiscussionComment = typeof discussionComments.$inferSelect;
+export type InsertDiscussionLike = z.infer<typeof insertDiscussionLikeSchema>;
+export type DiscussionLike = typeof discussionLikes.$inferSelect;
+export type InsertGallery = z.infer<typeof insertGallerySchema>;
+export type Gallery = typeof galleries.$inferSelect;
+export type InsertGalleryImage = z.infer<typeof insertGalleryImageSchema>;
+export type GalleryImage = typeof galleryImages.$inferSelect;
+export type InsertGalleryLike = z.infer<typeof insertGalleryLikeSchema>;
+export type GalleryLike = typeof galleryLikes.$inferSelect;
+export type InsertAdvertisement = z.infer<typeof insertAdvertisementSchema>;
+export type Advertisement = typeof advertisements.$inferSelect;
+export type InsertAdPayment = z.infer<typeof insertAdPaymentSchema>;
+export type AdPayment = typeof adPayments.$inferSelect;
+export type InsertAdAnalytics = z.infer<typeof insertAdAnalyticsSchema>;
+export type AdAnalytics = typeof adAnalytics.$inferSelect;
+export type InsertActivityFeed = z.infer<typeof insertActivityFeedSchema>;
+export type ActivityFeed = typeof activityFeed.$inferSelect;
+export type InsertActivityLike = z.infer<typeof insertActivityLikeSchema>;
+export type ActivityLike = typeof activityLikes.$inferSelect;
+export type InsertServiceRating = z.infer<typeof insertServiceRatingSchema>;
+export type ServiceRating = typeof serviceRatings.$inferSelect;
+export type InsertUserPresence = z.infer<typeof insertUserPresenceSchema>;
+export type UserPresence = typeof userPresence.$inferSelect;
+export type InsertLostAndFound = z.infer<typeof insertLostAndFoundSchema>;
+export type LostAndFound = typeof lostAndFound.$inferSelect;
+export type InsertCommunityAnnouncement = z.infer<typeof insertCommunityAnnouncementSchema>;
+export type CommunityAnnouncement = typeof communityAnnouncements.$inferSelect;
+
+// Marketplace Tables
+export const marketplaceItems = pgTable("marketplace_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sellerId: varchar("seller_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  category: text("category").notNull(), // Electronics, Furniture, Books, Clothing, Toys, etc.
+  condition: text("condition").notNull(), // New, Like New, Good, Fair
+  listingType: text("listing_type").notNull(), // sell, exchange, free
+  price: integer("price"), // Price in INR (null for exchange/free)
+  negotiable: integer("negotiable").notNull().default(1), // 0 or 1 boolean
+  images: text("images").array().default(sql`ARRAY[]::text[]`),
+  location: text("location").notNull(), // Tower/Block location within society
+  status: text("status").notNull().default('available'), // available, sold, reserved, deleted
+  viewCount: integer("view_count").notNull().default(0),
+  favoriteCount: integer("favorite_count").notNull().default(0),
+  soldAt: timestamp("sold_at"),
+  soldTo: varchar("sold_to").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const marketplaceOffers = pgTable("marketplace_offers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => marketplaceItems.id),
+  buyerId: varchar("buyer_id").notNull().references(() => users.id),
+  offerAmount: integer("offer_amount"), // Offered price (null for exchange)
+  exchangeOffer: text("exchange_offer"), // What they're offering to exchange
+  message: text("message"), // Optional message to seller
+  status: text("status").notNull().default('pending'), // pending, accepted, rejected, withdrawn
+  respondedAt: timestamp("responded_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const marketplaceFavorites = pgTable("marketplace_favorites", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => marketplaceItems.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const marketplaceReviews = pgTable("marketplace_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => marketplaceItems.id),
+  reviewerId: varchar("reviewer_id").notNull().references(() => users.id),
+  revieweeId: varchar("reviewee_id").notNull().references(() => users.id), // Seller or buyer being reviewed
+  rating: integer("rating").notNull(), // 1-5 stars
+  review: text("review").notNull(),
+  transactionType: text("transaction_type").notNull(), // buy, sell, exchange
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Tool & Equipment Rental Tables
+export const rentalItems = pgTable("rental_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ownerId: varchar("owner_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  category: text("category").notNull(), // Power Tools, Garden Tools, Kitchen Equipment, Party Supplies, Sports Equipment, etc.
+  condition: text("condition").notNull(), // Excellent, Good, Fair
+  images: text("images").array().default(sql`ARRAY[]::text[]`),
+  location: text("location").notNull(), // Tower/Block location
+  rentalPrice: integer("rental_price").notNull(), // Price per day in INR
+  securityDeposit: integer("security_deposit").notNull().default(0), // Refundable deposit
+  availability: text("availability").notNull().default('available'), // available, rented, maintenance, unavailable
+  pickupLocation: text("pickup_location").notNull(), // Where to pick up the item
+  termsAndConditions: text("terms_and_conditions"), // Special terms
+  viewCount: integer("view_count").notNull().default(0),
+  totalBookings: integer("total_bookings").notNull().default(0),
+  rating: integer("rating").notNull().default(0), // Average rating (0-500, divide by 100 for 0-5 stars)
+  reviewCount: integer("review_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const rentalBookings = pgTable("rental_bookings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => rentalItems.id),
+  renterId: varchar("renter_id").notNull().references(() => users.id),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  totalAmount: integer("total_amount").notNull(), // Total rental cost
+  securityDeposit: integer("security_deposit").notNull(),
+  status: text("status").notNull().default('pending'), // pending, confirmed, active, completed, cancelled
+  pickupTime: timestamp("pickup_time"),
+  returnTime: timestamp("return_time"),
+  notes: text("notes"), // Special requests or notes
+  ownerNotes: text("owner_notes"), // Owner's notes about the rental
+  depositReturned: integer("deposit_returned").notNull().default(0), // 0 or 1 boolean
+  depositReturnedAt: timestamp("deposit_returned_at"),
+  cancelledBy: varchar("cancelled_by").references(() => users.id),
+  cancellationReason: text("cancellation_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const rentalReviews = pgTable("rental_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bookingId: varchar("booking_id").notNull().references(() => rentalBookings.id),
+  itemId: varchar("item_id").notNull().references(() => rentalItems.id),
+  reviewerId: varchar("reviewer_id").notNull().references(() => users.id),
+  rating: integer("rating").notNull(), // 1-5 stars
+  review: text("review").notNull(),
+  reviewType: text("review_type").notNull(), // renter_review (renter reviewing item), owner_review (owner reviewing renter)
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const rentalFavorites = pgTable("rental_favorites", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  itemId: varchar("item_id").notNull().references(() => rentalItems.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Insert schemas for Marketplace
+export const insertMarketplaceItemSchema = createInsertSchema(marketplaceItems).omit({
+  id: true,
+  viewCount: true,
+  favoriteCount: true,
+  soldAt: true,
+  soldTo: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertMarketplaceOfferSchema = createInsertSchema(marketplaceOffers).omit({
+  id: true,
+  status: true,
+  respondedAt: true,
+  createdAt: true,
+});
+
+export const insertMarketplaceFavoriteSchema = createInsertSchema(marketplaceFavorites).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertMarketplaceReviewSchema = createInsertSchema(marketplaceReviews).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Insert schemas for Tool Rental
+export const insertRentalItemSchema = createInsertSchema(rentalItems).omit({
+  id: true,
+  viewCount: true,
+  totalBookings: true,
+  rating: true,
+  reviewCount: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertRentalBookingSchema = createInsertSchema(rentalBookings).omit({
+  id: true,
+  status: true,
+  pickupTime: true,
+  returnTime: true,
+  depositReturned: true,
+  depositReturnedAt: true,
+  cancelledBy: true,
+  cancellationReason: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertRentalReviewSchema = createInsertSchema(rentalReviews).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertRentalFavoriteSchema = createInsertSchema(rentalFavorites).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Type exports for Marketplace
+export type InsertMarketplaceItem = z.infer<typeof insertMarketplaceItemSchema>;
+export type MarketplaceItem = typeof marketplaceItems.$inferSelect;
+export type InsertMarketplaceOffer = z.infer<typeof insertMarketplaceOfferSchema>;
+export type MarketplaceOffer = typeof marketplaceOffers.$inferSelect;
+export type InsertMarketplaceFavorite = z.infer<typeof insertMarketplaceFavoriteSchema>;
+export type MarketplaceFavorite = typeof marketplaceFavorites.$inferSelect;
+export type InsertMarketplaceReview = z.infer<typeof insertMarketplaceReviewSchema>;
+export type MarketplaceReview = typeof marketplaceReviews.$inferSelect;
+
+// Type exports for Tool Rental
+export type InsertRentalItem = z.infer<typeof insertRentalItemSchema>;
+export type RentalItem = typeof rentalItems.$inferSelect;
+export type InsertRentalBooking = z.infer<typeof insertRentalBookingSchema>;
+export type RentalBooking = typeof rentalBookings.$inferSelect;
+export type InsertRentalReview = z.infer<typeof insertRentalReviewSchema>;
+export type RentalReview = typeof rentalReviews.$inferSelect;
+export type InsertRentalFavorite = z.infer<typeof insertRentalFavoriteSchema>;
+export type RentalFavorite = typeof rentalFavorites.$inferSelect;

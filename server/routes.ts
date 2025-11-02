@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { getPhoneNumberFromToken, verifyIdToken } from "./firebase-admin";
 import { insertUserSchema, insertMessageSchema } from "@shared/schema";
+import { createRazorpayOrder, verifyRazorpaySignature, getRazorpayKeyId } from "./razorpay";
 import multer from "multer";
 import path from "path";
 import { promises as fs } from "fs";
@@ -108,6 +109,174 @@ const uploadChatFile = multer({
   },
 });
 
+const uploadGalleryImage = multer({
+  storage: multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const uploadDir = path.join(process.cwd(), 'uploads', 'galleries');
+      await fs.mkdir(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = `${Date.now()}-${randomUUID()}`;
+      const ext = path.extname(file.originalname);
+      cb(null, `gallery-${uniqueSuffix}${ext}`);
+    },
+  }),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB per image
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Only image files (JPG, PNG, GIF, WebP) are allowed'));
+  },
+});
+
+const uploadLostFoundImage = multer({
+  storage: multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const uploadDir = path.join(process.cwd(), 'uploads', 'lost-found');
+      await fs.mkdir(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = `${Date.now()}-${randomUUID()}`;
+      const ext = path.extname(file.originalname);
+      cb(null, `lostfound-${uniqueSuffix}${ext}`);
+    },
+  }),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB per image
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Only image files (JPG, PNG, GIF, WebP) are allowed'));
+  },
+});
+
+const uploadAnnouncementImage = multer({
+  storage: multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const uploadDir = path.join(process.cwd(), 'uploads', 'announcements');
+      await fs.mkdir(uploadDir, { recursive: true});
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = `${Date.now()}-${randomUUID()}`;
+      const ext = path.extname(file.originalname);
+      cb(null, `announcement-${uniqueSuffix}${ext}`);
+    },
+  }),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB per image
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Only image files (JPG, PNG, GIF, WebP) are allowed'));
+  },
+});
+
+const uploadMarketplaceImage = multer({
+  storage: multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const uploadDir = path.join(process.cwd(), 'uploads', 'marketplace');
+      await fs.mkdir(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = `${Date.now()}-${randomUUID()}`;
+      const ext = path.extname(file.originalname);
+      cb(null, `marketplace-${uniqueSuffix}${ext}`);
+    },
+  }),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB per image
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Only image files (JPG, PNG, GIF, WebP) are allowed'));
+  },
+});
+
+const uploadRentalImage = multer({
+  storage: multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const uploadDir = path.join(process.cwd(), 'uploads', 'rentals');
+      await fs.mkdir(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = `${Date.now()}-${randomUUID()}`;
+      const ext = path.extname(file.originalname);
+      cb(null, `rental-${uniqueSuffix}${ext}`);
+    },
+  }),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB per image
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Only image files (JPG, PNG, GIF, WebP) are allowed'));
+  },
+});
+
+const uploadAdvertisementImage = multer({
+  storage: multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const uploadDir = path.join(process.cwd(), 'uploads', 'advertisements');
+      await fs.mkdir(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = `${Date.now()}-${randomUUID()}`;
+      const ext = path.extname(file.originalname);
+      cb(null, `advertisement-${uniqueSuffix}${ext}`);
+    },
+  }),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB per image
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Only image files (JPG, PNG, GIF, WebP) are allowed'));
+  },
+});
+
 async function authenticateUser(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const authHeader = req.headers.authorization;
@@ -194,7 +363,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const user = await storage.createUser(validatedData);
       
-      const techStackBadges = getBadgesFromTechStack(user.techStack);
+      const techStackBadges = getBadgesFromTechStack(user.techStack || []);
       const badges = ['First Member', ...techStackBadges];
       const points = 50;
       
@@ -336,6 +505,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Search error:', error);
       return res.status(500).json({ error: "Search failed" });
+    }
+  });
+
+  app.get("/api/services/:categoryId/users", async (req, res) => {
+    try {
+      const { categoryId } = req.params;
+      const { role } = req.query;
+      
+      const roleFilter = role === 'provider' || role === 'seeker' ? role : undefined;
+      const users = await storage.getUsersByCategory(categoryId, roleFilter);
+      
+      return res.json({ users });
+    } catch (error: any) {
+      console.error('Get category users error:', error);
+      return res.status(500).json({ error: "Failed to get users" });
     }
   });
 
@@ -1906,7 +2090,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         const csvHeader = 'ID,Name,Email,Phone,Company,Tech Stack,Years of Experience,Points,Level,Created At\n';
         const csvRows = users.map(user => 
-          `${user.id},"${user.fullName}","${user.email}","${user.phoneNumber}","${user.company}","${user.techStack.join('; ')}",${user.yearsOfExperience},${user.points},${Math.floor(user.points / 100)},${user.createdAt.toISOString()}`
+          `${user.id},"${user.fullName}","${user.email}","${user.phoneNumber}","${user.company}","${(user.techStack || []).join('; ')}",${user.yearsOfExperience},${user.points},${Math.floor(user.points / 100)},${user.createdAt.toISOString()}`
         ).join('\n');
         
         res.setHeader('Content-Type', 'text/csv');
@@ -2767,6 +2951,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const decodedToken = await verifyIdToken(token);
       ws.userId = decodedToken.uid;
 
+      // Update user presence to online
+      await storage.updateUserPresence(ws.userId, 'online');
+
       ws.on('message', async (data) => {
         try {
           const message = JSON.parse(data.toString());
@@ -2922,14 +3109,958 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      ws.on('close', () => {
+      ws.on('close', async () => {
         console.log('Client disconnected');
+        // Update user presence to offline
+        if (ws.userId) {
+          await storage.updateUserPresence(ws.userId, 'offline');
+        }
       });
 
       ws.send(JSON.stringify({ type: 'connected', userId: ws.userId }));
     } catch (error) {
       console.error('WebSocket auth error:', error);
       ws.close(1008, 'Authentication failed');
+    }
+  });
+
+  app.get("/api/lost-and-found", async (req, res) => {
+    try {
+      const items = await storage.getLostAndFoundItems();
+      res.json(items);
+    } catch (error: any) {
+      console.error('Error fetching lost and found items:', error);
+      res.status(500).json({ error: 'Failed to fetch items' });
+    }
+  });
+
+  app.post("/api/lost-and-found", authenticateUser, (req: AuthRequest, res: Response, next: NextFunction) => {
+    uploadLostFoundImage.array('images', 5)(req, res, async (err: any) => {
+      if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+
+      try {
+        const files = req.files as Express.Multer.File[];
+        const imageUrls = files ? files.map(f => `/uploads/lost-found/${f.filename}`) : [];
+
+        const item = await storage.createLostAndFoundItem({
+          userId: req.userId!,
+          type: req.body.type,
+          title: req.body.title,
+          description: req.body.description,
+          category: req.body.category,
+          location: req.body.location || null,
+          contactInfo: req.body.contactInfo || null,
+          images: imageUrls,
+        });
+
+        res.json(item);
+      } catch (error: any) {
+        console.error('Error creating lost and found item:', error);
+        res.status(500).json({ error: 'Failed to create item' });
+      }
+    });
+  });
+
+  app.post("/api/lost-and-found/:id/resolve", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const item = await storage.resolveLostAndFoundItem(req.params.id, req.userId!);
+      res.json(item);
+    } catch (error: any) {
+      console.error('Error resolving item:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to resolve item' 
+      });
+    }
+  });
+
+  app.get("/api/announcements", async (req, res) => {
+    try {
+      const announcements = await storage.getApprovedAnnouncements();
+      res.json(announcements);
+    } catch (error: any) {
+      console.error('Error fetching announcements:', error);
+      res.status(500).json({ error: 'Failed to fetch announcements' });
+    }
+  });
+
+  app.get("/api/announcements/pending", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const user = await storage.getUser(req.userId!);
+      if (!user || user.isAdmin !== 1) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const announcements = await storage.getPendingAnnouncements();
+      res.json(announcements);
+    } catch (error: any) {
+      console.error('Error fetching pending announcements:', error);
+      res.status(500).json({ error: 'Failed to fetch pending announcements' });
+    }
+  });
+
+  app.post("/api/announcements", authenticateUser, (req: AuthRequest, res: Response, next: NextFunction) => {
+    uploadAnnouncementImage.array('images', 5)(req, res, async (err: any) => {
+      if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+
+      try {
+        const files = req.files as Express.Multer.File[];
+        const imageUrls = files ? files.map(f => `/uploads/announcements/${f.filename}`) : [];
+
+        const announcement = await storage.createAnnouncement({
+          userId: req.userId!,
+          title: req.body.title,
+          content: req.body.content,
+          priority: req.body.priority || 'normal',
+          expiresAt: req.body.expiresAt || null,
+          images: imageUrls,
+        });
+
+        res.json(announcement);
+      } catch (error: any) {
+        console.error('Error creating announcement:', error);
+        res.status(500).json({ error: 'Failed to create announcement' });
+      }
+    });
+  });
+
+  app.post("/api/announcements/:id/approve", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const user = await storage.getUser(req.userId!);
+      if (!user || user.isAdmin !== 1) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const announcement = await storage.approveAnnouncement(req.params.id, req.userId!);
+      res.json(announcement);
+    } catch (error: any) {
+      console.error('Error approving announcement:', error);
+      res.status(500).json({ error: 'Failed to approve announcement' });
+    }
+  });
+
+  app.post("/api/announcements/:id/reject", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const user = await storage.getUser(req.userId!);
+      if (!user || user.isAdmin !== 1) {
+        return res.status(403).json({ error: 'Admin access required' });
+      }
+
+      const announcement = await storage.rejectAnnouncement(
+        req.params.id,
+        req.body.reason || 'Not specified'
+      );
+      res.json(announcement);
+    } catch (error: any) {
+      console.error('Error rejecting announcement:', error);
+      res.status(500).json({ error: 'Failed to reject announcement' });
+    }
+  });
+
+  // Marketplace Routes
+  app.get("/api/marketplace", async (req, res) => {
+    try {
+      const filters = {
+        category: req.query.category as string,
+        listingType: req.query.listingType as string,
+        status: req.query.status as string,
+        sellerId: req.query.sellerId as string,
+        minPrice: req.query.minPrice ? parseInt(req.query.minPrice as string) : undefined,
+        maxPrice: req.query.maxPrice ? parseInt(req.query.maxPrice as string) : undefined,
+        searchQuery: req.query.searchQuery as string,
+      };
+      const items = await storage.getMarketplaceItems(filters);
+      res.json(items);
+    } catch (error: any) {
+      console.error('Error fetching marketplace items:', error);
+      res.status(500).json({ error: 'Failed to fetch marketplace items' });
+    }
+  });
+
+  app.post("/api/marketplace", authenticateUser, (req: AuthRequest, res: Response, next: NextFunction) => {
+    uploadMarketplaceImage.array('images', 10)(req, res, async (err: any) => {
+      if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+
+      try {
+        const files = req.files as Express.Multer.File[];
+        const imageUrls = files ? files.map(f => `/uploads/marketplace/${f.filename}`) : [];
+
+        const item = await storage.createMarketplaceItem({
+          sellerId: req.userId!,
+          title: req.body.title,
+          description: req.body.description,
+          category: req.body.category,
+          condition: req.body.condition,
+          listingType: req.body.listingType,
+          price: req.body.price ? parseInt(req.body.price) : null,
+          negotiable: req.body.negotiable !== undefined ? parseInt(req.body.negotiable) : 1,
+          images: imageUrls,
+          location: req.body.location,
+          status: 'available',
+        });
+
+        res.json(item);
+      } catch (error: any) {
+        console.error('Error creating marketplace item:', error);
+        res.status(500).json({ error: 'Failed to create marketplace item' });
+      }
+    });
+  });
+
+  app.get("/api/marketplace/:id", async (req, res) => {
+    try {
+      const item = await storage.getMarketplaceItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: 'Item not found' });
+      }
+      res.json(item);
+    } catch (error: any) {
+      console.error('Error fetching marketplace item:', error);
+      res.status(500).json({ error: 'Failed to fetch marketplace item' });
+    }
+  });
+
+  app.put("/api/marketplace/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const updates = {
+        title: req.body.title,
+        description: req.body.description,
+        category: req.body.category,
+        condition: req.body.condition,
+        price: req.body.price ? parseInt(req.body.price) : null,
+        negotiable: req.body.negotiable !== undefined ? parseInt(req.body.negotiable) : undefined,
+        location: req.body.location,
+        status: req.body.status,
+      };
+
+      const item = await storage.updateMarketplaceItem(req.params.id, req.userId!, updates);
+      res.json(item);
+    } catch (error: any) {
+      console.error('Error updating marketplace item:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to update marketplace item' 
+      });
+    }
+  });
+
+  app.delete("/api/marketplace/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      await storage.deleteMarketplaceItem(req.params.id, req.userId!);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error deleting marketplace item:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to delete marketplace item' 
+      });
+    }
+  });
+
+  app.post("/api/marketplace/:id/favorite", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const result = await storage.toggleMarketplaceFavorite(req.params.id, req.userId!);
+      res.json(result);
+    } catch (error: any) {
+      console.error('Error toggling favorite:', error);
+      res.status(500).json({ error: 'Failed to toggle favorite' });
+    }
+  });
+
+  app.post("/api/marketplace/:id/offer", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const offer = await storage.createMarketplaceOffer({
+        itemId: req.params.id,
+        buyerId: req.userId!,
+        offerAmount: req.body.offerAmount ? parseInt(req.body.offerAmount) : null,
+        exchangeOffer: req.body.exchangeOffer || null,
+        message: req.body.message || null,
+      });
+      res.json(offer);
+    } catch (error: any) {
+      console.error('Error creating offer:', error);
+      res.status(500).json({ error: 'Failed to create offer' });
+    }
+  });
+
+  app.get("/api/marketplace/:id/offers", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const offers = await storage.getMarketplaceOffers(req.params.id, req.userId!);
+      res.json(offers);
+    } catch (error: any) {
+      console.error('Error fetching offers:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to fetch offers' 
+      });
+    }
+  });
+
+  app.put("/api/marketplace/offers/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const offer = await storage.updateOfferStatus(req.params.id, req.userId!, req.body.status);
+      res.json(offer);
+    } catch (error: any) {
+      console.error('Error updating offer status:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to update offer status' 
+      });
+    }
+  });
+
+  app.post("/api/marketplace/:id/mark-sold", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const item = await storage.markItemAsSold(req.params.id, req.userId!, req.body.buyerId);
+      res.json(item);
+    } catch (error: any) {
+      console.error('Error marking item as sold:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to mark item as sold' 
+      });
+    }
+  });
+
+  app.get("/api/marketplace/favorites/my", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const favorites = await storage.getUserMarketplaceFavorites(req.userId!);
+      res.json(favorites);
+    } catch (error: any) {
+      console.error('Error fetching favorites:', error);
+      res.status(500).json({ error: 'Failed to fetch favorites' });
+    }
+  });
+
+  app.post("/api/marketplace/reviews", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const review = await storage.createMarketplaceReview({
+        itemId: req.body.itemId,
+        reviewerId: req.userId!,
+        revieweeId: req.body.revieweeId,
+        rating: parseInt(req.body.rating),
+        review: req.body.review,
+        transactionType: req.body.transactionType,
+      });
+      res.json(review);
+    } catch (error: any) {
+      console.error('Error creating review:', error);
+      res.status(500).json({ error: 'Failed to create review' });
+    }
+  });
+
+  // Tool & Equipment Rental Routes
+  app.get("/api/rentals", async (req, res) => {
+    try {
+      const filters = {
+        category: req.query.category as string,
+        ownerId: req.query.ownerId as string,
+        minPrice: req.query.minPrice ? parseInt(req.query.minPrice as string) : undefined,
+        maxPrice: req.query.maxPrice ? parseInt(req.query.maxPrice as string) : undefined,
+        searchQuery: req.query.searchQuery as string,
+      };
+      const items = await storage.getRentalItems(filters);
+      res.json(items);
+    } catch (error: any) {
+      console.error('Error fetching rental items:', error);
+      res.status(500).json({ error: 'Failed to fetch rental items' });
+    }
+  });
+
+  app.post("/api/rentals", authenticateUser, (req: AuthRequest, res: Response, next: NextFunction) => {
+    uploadRentalImage.array('images', 10)(req, res, async (err: any) => {
+      if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+
+      try {
+        const files = req.files as Express.Multer.File[];
+        const imageUrls = files ? files.map(f => `/uploads/rentals/${f.filename}`) : [];
+
+        const item = await storage.createRentalItem({
+          ownerId: req.userId!,
+          itemName: req.body.itemName,
+          description: req.body.description,
+          category: req.body.category,
+          condition: req.body.condition,
+          rentalPrice: parseInt(req.body.rentalPrice),
+          priceUnit: req.body.priceUnit || 'day',
+          deposit: req.body.deposit ? parseInt(req.body.deposit) : 0,
+          minRentalDuration: req.body.minRentalDuration ? parseInt(req.body.minRentalDuration) : null,
+          maxRentalDuration: req.body.maxRentalDuration ? parseInt(req.body.maxRentalDuration) : null,
+          images: imageUrls,
+          location: req.body.location,
+          availability: 'available',
+        });
+
+        res.json(item);
+      } catch (error: any) {
+        console.error('Error creating rental item:', error);
+        res.status(500).json({ error: 'Failed to create rental item' });
+      }
+    });
+  });
+
+  app.get("/api/rentals/:id", async (req, res) => {
+    try {
+      const item = await storage.getRentalItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: 'Rental item not found' });
+      }
+      res.json(item);
+    } catch (error: any) {
+      console.error('Error fetching rental item:', error);
+      res.status(500).json({ error: 'Failed to fetch rental item' });
+    }
+  });
+
+  app.put("/api/rentals/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const updates = {
+        itemName: req.body.itemName,
+        description: req.body.description,
+        category: req.body.category,
+        condition: req.body.condition,
+        rentalPrice: req.body.rentalPrice ? parseInt(req.body.rentalPrice) : undefined,
+        priceUnit: req.body.priceUnit,
+        deposit: req.body.deposit ? parseInt(req.body.deposit) : undefined,
+        minRentalDuration: req.body.minRentalDuration ? parseInt(req.body.minRentalDuration) : undefined,
+        maxRentalDuration: req.body.maxRentalDuration ? parseInt(req.body.maxRentalDuration) : undefined,
+        location: req.body.location,
+        availability: req.body.availability,
+      };
+
+      const item = await storage.updateRentalItem(req.params.id, req.userId!, updates);
+      res.json(item);
+    } catch (error: any) {
+      console.error('Error updating rental item:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to update rental item' 
+      });
+    }
+  });
+
+  app.delete("/api/rentals/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      await storage.deleteRentalItem(req.params.id, req.userId!);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error deleting rental item:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to delete rental item' 
+      });
+    }
+  });
+
+  app.post("/api/rentals/:id/check-availability", async (req, res) => {
+    try {
+      const isAvailable = await storage.checkRentalAvailability(
+        req.params.id,
+        new Date(req.body.startDate),
+        new Date(req.body.endDate)
+      );
+      res.json({ available: isAvailable });
+    } catch (error: any) {
+      console.error('Error checking availability:', error);
+      res.status(500).json({ error: 'Failed to check availability' });
+    }
+  });
+
+  app.post("/api/rentals/:id/book", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const booking = await storage.createRentalBooking({
+        itemId: req.params.id,
+        renterId: req.userId!,
+        startDate: new Date(req.body.startDate),
+        endDate: new Date(req.body.endDate),
+        totalAmount: parseInt(req.body.totalAmount),
+        depositPaid: req.body.depositPaid !== undefined ? parseInt(req.body.depositPaid) : 0,
+        notes: req.body.notes || null,
+      });
+      res.json(booking);
+    } catch (error: any) {
+      console.error('Error creating booking:', error);
+      res.status(error.message === 'Item not available for selected dates' ? 409 : 500).json({ 
+        error: error.message || 'Failed to create booking' 
+      });
+    }
+  });
+
+  app.get("/api/rentals/:id/bookings", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const bookings = await storage.getRentalBookings(req.params.id, req.userId!);
+      res.json(bookings);
+    } catch (error: any) {
+      console.error('Error fetching bookings:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to fetch bookings' 
+      });
+    }
+  });
+
+  app.get("/api/rentals/bookings/my", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const bookings = await storage.getUserRentalBookings(req.userId!);
+      res.json(bookings);
+    } catch (error: any) {
+      console.error('Error fetching user bookings:', error);
+      res.status(500).json({ error: 'Failed to fetch user bookings' });
+    }
+  });
+
+  app.put("/api/rentals/bookings/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const booking = await storage.updateBookingStatus(req.params.id, req.userId!, req.body.status);
+      res.json(booking);
+    } catch (error: any) {
+      console.error('Error updating booking status:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to update booking status' 
+      });
+    }
+  });
+
+  app.post("/api/rentals/:id/favorite", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const result = await storage.toggleRentalFavorite(req.params.id, req.userId!);
+      res.json(result);
+    } catch (error: any) {
+      console.error('Error toggling favorite:', error);
+      res.status(500).json({ error: 'Failed to toggle favorite' });
+    }
+  });
+
+  app.get("/api/rentals/favorites/my", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const favorites = await storage.getUserRentalFavorites(req.userId!);
+      res.json(favorites);
+    } catch (error: any) {
+      console.error('Error fetching favorites:', error);
+      res.status(500).json({ error: 'Failed to fetch favorites' });
+    }
+  });
+
+  app.post("/api/rentals/reviews", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const review = await storage.createRentalReview({
+        itemId: req.body.itemId,
+        reviewerId: req.userId!,
+        ownerId: req.body.ownerId,
+        bookingId: req.body.bookingId,
+        rating: parseInt(req.body.rating),
+        review: req.body.review,
+        rentalExperience: req.body.rentalExperience,
+      });
+      res.json(review);
+    } catch (error: any) {
+      console.error('Error creating review:', error);
+      res.status(500).json({ error: 'Failed to create review' });
+    }
+  });
+
+  // Advertisement Routes
+  app.get("/api/advertisements", async (req, res) => {
+    try {
+      // Public endpoint only shows active ads unless authenticated user is owner/admin
+      const filters: any = {
+        serviceCategory: req.query.serviceCategory as string,
+      };
+
+      // Only allow status/advertiserId filters for authenticated users
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const idToken = authHeader.split('Bearer ')[1];
+          const decodedToken = await verifyIdToken(idToken);
+          const userId = decodedToken.uid;
+          const user = await storage.getUser(userId);
+
+          // Authenticated users can filter by their own ads or admins can see all
+          if (req.query.advertiserId === userId || user?.isAdmin === 1) {
+            filters.advertiserId = req.query.advertiserId as string;
+            filters.status = req.query.status as string;
+          } else {
+            // Non-owner, non-admin: only show active ads
+            filters.status = 'active';
+          }
+        } catch (error) {
+          // Invalid token: show only active ads
+          filters.status = 'active';
+        }
+      } else {
+        // Unauthenticated: only show active ads
+        filters.status = 'active';
+      }
+
+      const ads = await storage.getAdvertisements(filters);
+      res.json(ads);
+    } catch (error: any) {
+      console.error('Error fetching advertisements:', error);
+      res.status(500).json({ error: 'Failed to fetch advertisements' });
+    }
+  });
+
+  app.post("/api/advertisements", authenticateUser, (req: AuthRequest, res: Response, next: NextFunction) => {
+    uploadAdvertisementImage.single('image')(req, res, async (err: any) => {
+      if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+
+      try {
+        const file = req.file as Express.Multer.File | undefined;
+        const imageUrl = file ? `/uploads/advertisements/${file.filename}` : null;
+
+        const advertisement = await storage.createAdvertisement({
+          advertiserId: req.userId!,
+          title: req.body.title,
+          description: req.body.description,
+          serviceCategory: req.body.serviceCategory,
+          imageUrl,
+          servicePageContent: req.body.servicePageContent,
+          pricing: req.body.pricing,
+          contactInfo: req.body.contactInfo,
+          duration: parseInt(req.body.duration),
+        });
+
+        res.json(advertisement);
+      } catch (error: any) {
+        console.error('Error creating advertisement:', error);
+        res.status(500).json({ error: 'Failed to create advertisement' });
+      }
+    });
+  });
+
+  app.get("/api/advertisements/:id", async (req, res) => {
+    try {
+      const ad = await storage.getAdvertisement(req.params.id);
+      if (!ad) {
+        return res.status(404).json({ error: 'Advertisement not found' });
+      }
+      res.json(ad);
+    } catch (error: any) {
+      console.error('Error fetching advertisement:', error);
+      res.status(500).json({ error: 'Failed to fetch advertisement' });
+    }
+  });
+
+  app.put("/api/advertisements/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const updates = {
+        title: req.body.title,
+        description: req.body.description,
+        serviceCategory: req.body.serviceCategory,
+        servicePageContent: req.body.servicePageContent,
+        pricing: req.body.pricing,
+        contactInfo: req.body.contactInfo,
+      };
+
+      const ad = await storage.updateAdvertisement(req.params.id, req.userId!, updates);
+      res.json(ad);
+    } catch (error: any) {
+      console.error('Error updating advertisement:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to update advertisement' 
+      });
+    }
+  });
+
+  app.delete("/api/advertisements/:id", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      await storage.deleteAdvertisement(req.params.id, req.userId!);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error deleting advertisement:', error);
+      res.status(error.message === 'Unauthorized' ? 403 : 500).json({ 
+        error: error.message || 'Failed to delete advertisement' 
+      });
+    }
+  });
+
+  app.post("/api/advertisements/:id/approve", authenticateUser, authorizeAdmin, async (req: AuthRequest, res) => {
+    try {
+      const ad = await storage.approveAdvertisement(req.params.id, parseInt(req.body.duration));
+      res.json(ad);
+    } catch (error: any) {
+      console.error('Error approving advertisement:', error);
+      res.status(500).json({ error: 'Failed to approve advertisement' });
+    }
+  });
+
+  app.post("/api/advertisements/:id/reject", authenticateUser, authorizeAdmin, async (req: AuthRequest, res) => {
+    try {
+      const ad = await storage.rejectAdvertisement(req.params.id, req.body.reason || 'Not specified');
+      res.json(ad);
+    } catch (error: any) {
+      console.error('Error rejecting advertisement:', error);
+      res.status(500).json({ error: 'Failed to reject advertisement' });
+    }
+  });
+
+  app.post("/api/advertisements/:id/view", async (req, res) => {
+    try {
+      const userId = req.body.userId || null;
+      await storage.trackAdView(req.params.id, userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error tracking ad view:', error);
+      res.status(500).json({ error: 'Failed to track view' });
+    }
+  });
+
+  app.post("/api/advertisements/:id/click", async (req, res) => {
+    try {
+      const userId = req.body.userId || null;
+      await storage.trackAdClick(req.params.id, userId);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error tracking ad click:', error);
+      res.status(500).json({ error: 'Failed to track click' });
+    }
+  });
+
+  app.get("/api/advertisements/:id/analytics", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const ad = await storage.getAdvertisement(req.params.id);
+      if (!ad || ad.advertiser.id !== req.userId) {
+        return res.status(403).json({ error: 'Unauthorized' });
+      }
+
+      const analytics = await storage.getAdAnalytics(req.params.id);
+      res.json(analytics);
+    } catch (error: any) {
+      console.error('Error fetching analytics:', error);
+      res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+  });
+
+  // Razorpay Payment Routes
+  app.get("/api/razorpay/key", (req, res) => {
+    res.json({ key: getRazorpayKeyId() });
+  });
+
+  app.post("/api/advertisements/payment/create-order", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { advertisementId, amount, duration } = req.body;
+
+      const order = await createRazorpayOrder({
+        amount: parseInt(amount),
+        receipt: `ad_${advertisementId}_${Date.now()}`,
+        notes: {
+          advertisementId,
+          userId: req.userId!,
+          duration: duration.toString(),
+        },
+      });
+
+      const payment = await storage.createAdPayment({
+        advertisementId,
+        userId: req.userId!,
+        amount: parseInt(amount),
+        currency: 'INR',
+        razorpayOrderId: order.id,
+      });
+
+      res.json({
+        orderId: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        paymentId: payment.id,
+      });
+    } catch (error: any) {
+      console.error('Error creating payment order:', error);
+      res.status(500).json({ error: 'Failed to create payment order' });
+    }
+  });
+
+  app.post("/api/advertisements/payment/verify", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { paymentId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+      const isValid = verifyRazorpaySignature({
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+      });
+
+      if (!isValid) {
+        return res.status(400).json({ error: 'Invalid payment signature' });
+      }
+
+      const payment = await storage.updateAdPaymentStatus(paymentId, {
+        razorpayPaymentId: razorpay_payment_id,
+        razorpaySignature: razorpay_signature,
+        status: 'completed',
+      });
+
+      const adPayment = await storage.getAdPayment(paymentId);
+      if (adPayment && adPayment.advertisementId) {
+        const ad = await storage.getAdvertisement(adPayment.advertisementId);
+        if (ad) {
+          const durationDays = parseInt(ad.duration);
+          await storage.approveAdvertisement(adPayment.advertisementId, durationDays);
+        }
+      }
+
+      res.json({ success: true, payment });
+    } catch (error: any) {
+      console.error('Error verifying payment:', error);
+      res.status(500).json({ error: 'Failed to verify payment' });
+    }
+  });
+
+  // Activity Feed Routes
+  app.get("/api/activity-feed", async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+      
+      const activities = await storage.getActivityFeed({ limit, offset });
+      res.json({ activities });
+    } catch (error: any) {
+      console.error('Error fetching activity feed:', error);
+      res.status(500).json({ error: 'Failed to fetch activity feed' });
+    }
+  });
+
+  app.post("/api/activity-feed/:id/like", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      await storage.likeActivity(req.params.id, req.userId!);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error liking activity:', error);
+      res.status(500).json({ error: 'Failed to like activity' });
+    }
+  });
+
+  app.delete("/api/activity-feed/:id/like", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      await storage.unlikeActivity(req.params.id, req.userId!);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error unliking activity:', error);
+      res.status(500).json({ error: 'Failed to unlike activity' });
+    }
+  });
+
+  // Photo Galleries Routes
+  app.get("/api/galleries", async (req, res) => {
+    try {
+      const galleries = await storage.getGalleries();
+      res.json({ galleries });
+    } catch (error: any) {
+      console.error('Error fetching galleries:', error);
+      res.status(500).json({ error: 'Failed to fetch galleries' });
+    }
+  });
+
+  app.get("/api/galleries/:id", async (req, res) => {
+    try {
+      const gallery = await storage.getGallery(req.params.id);
+      if (!gallery) {
+        return res.status(404).json({ error: 'Gallery not found' });
+      }
+      res.json(gallery);
+    } catch (error: any) {
+      console.error('Error fetching gallery:', error);
+      res.status(500).json({ error: 'Failed to fetch gallery' });
+    }
+  });
+
+  app.post("/api/galleries", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const gallery = await storage.createGallery({
+        creatorId: req.userId!,
+        title: req.body.title,
+        description: req.body.description,
+        tags: req.body.tags || [],
+      });
+      res.json(gallery);
+    } catch (error: any) {
+      console.error('Error creating gallery:', error);
+      res.status(500).json({ error: 'Failed to create gallery' });
+    }
+  });
+
+  app.post("/api/galleries/:id/images", authenticateUser, (req: AuthRequest, res: Response, next: NextFunction) => {
+    uploadGalleryImage.array('images', 10)(req, res, async (err: any) => {
+      if (err) {
+        return res.status(400).json({ error: err.message });
+      }
+
+      try {
+        const files = req.files as Express.Multer.File[];
+        if (!files || files.length === 0) {
+          return res.status(400).json({ error: 'No images uploaded' });
+        }
+
+        const imageUrls = files.map((f, index) => ({
+          imageUrl: `/uploads/galleries/${f.filename}`,
+          caption: req.body.captions?.[index] || null,
+          sortOrder: index,
+        }));
+
+        const uploadedImages = [];
+        for (const img of imageUrls) {
+          const uploadedImage = await storage.uploadGalleryImage(req.params.id, img);
+          uploadedImages.push(uploadedImage);
+        }
+
+        res.json({ images: uploadedImages });
+      } catch (error: any) {
+        console.error('Error uploading gallery images:', error);
+        res.status(500).json({ error: 'Failed to upload images' });
+      }
+    });
+  });
+
+  app.post("/api/galleries/:id/like", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      await storage.likeGallery(req.params.id, req.userId!);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error liking gallery:', error);
+      res.status(500).json({ error: 'Failed to like gallery' });
+    }
+  });
+
+  app.delete("/api/galleries/:id/like", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      await storage.unlikeGallery(req.params.id, req.userId!);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error unliking gallery:', error);
+      res.status(500).json({ error: 'Failed to unlike gallery' });
+    }
+  });
+
+  // User Presence Routes
+  app.get("/api/presence/online", async (req, res) => {
+    try {
+      const onlineUsers = await storage.getOnlineUsers();
+      res.json({ users: onlineUsers });
+    } catch (error: any) {
+      console.error('Error fetching online users:', error);
+      res.status(500).json({ error: 'Failed to fetch online users' });
+    }
+  });
+
+  app.get("/api/presence/:userId", async (req, res) => {
+    try {
+      const presence = await storage.getUserPresence(req.params.userId);
+      res.json(presence);
+    } catch (error: any) {
+      console.error('Error fetching user presence:', error);
+      res.status(500).json({ error: 'Failed to fetch presence' });
+    }
+  });
+
+  app.post("/api/presence/update", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      await storage.updateUserPresence(req.userId!, req.body.status);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error updating presence:', error);
+      res.status(500).json({ error: 'Failed to update presence' });
     }
   });
 

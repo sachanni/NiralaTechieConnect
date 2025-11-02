@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Rocket, Users, Briefcase, Lightbulb, CalendarDays, MessagesSquare, ArrowRight, TrendingUp, Shield, GraduationCap } from "lucide-react";
+import { Rocket, Users, Briefcase, Lightbulb, CalendarDays, MessagesSquare, ArrowRight, TrendingUp, Shield, GraduationCap, Search, Megaphone, ShoppingCart, Wrench, Megaphone as AdvertiseIcon, UtensilsCrossed, Car, Gift, Baby, BookOpen, Heart, Sparkles, Activity as ActivityIcon, Camera } from "lucide-react";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -131,6 +131,51 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
     retry: false,
   });
 
+  const { data: lostFoundData } = useQuery<{ items: any[] }>({
+    queryKey: ['lost-found-count'],
+    queryFn: async () => {
+      const response = await fetch('/api/lost-found');
+      if (!response.ok) return { items: [] };
+      return response.json();
+    },
+    refetchInterval: 10000,
+  });
+
+  const { data: announcementsData } = useQuery<{ announcements: any[] }>({
+    queryKey: ['announcements-count'],
+    queryFn: async () => {
+      const response = await fetch('/api/announcements/active');
+      if (!response.ok) return { announcements: [] };
+      return response.json();
+    },
+    refetchInterval: 10000,
+  });
+
+  const { data: galleriesData } = useQuery<{ galleries: any[] }>({
+    queryKey: ['galleries-count'],
+    queryFn: async () => {
+      const response = await fetch('/api/galleries');
+      if (!response.ok) return { galleries: [] };
+      return response.json();
+    },
+    refetchInterval: 10000,
+  });
+
+  const { data: activityData } = useQuery<{ activities: any[] }>({
+    queryKey: ['recent-activities'],
+    queryFn: async () => {
+      const response = await fetch('/api/activity-feed?limit=5', {
+        headers: {
+          'Authorization': `Bearer ${idToken}`
+        }
+      });
+      if (!response.ok) return { activities: [] };
+      return response.json();
+    },
+    enabled: !!idToken,
+    refetchInterval: 10000,
+  });
+
   const recentJobs = jobsData?.jobs?.slice(0, 5) || [];
   const latestIdeas = ideasData?.ideas?.slice(0, 4) || [];
   const upcomingEvents = eventsData?.events?.filter((e: any) => {
@@ -158,7 +203,7 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2 md:gap-3">
               <Rocket className="w-5 h-5 md:w-6 md:h-6 text-primary" />
-              <h1 className="text-lg md:text-2xl font-bold text-foreground">Nirala Techie</h1>
+              <h1 className="text-lg md:text-2xl font-bold text-foreground">Nirala Estate</h1>
             </div>
           </div>
           <div className="flex items-center justify-between gap-3">
@@ -191,12 +236,150 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
           </Card>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4 mb-6 md:mb-8">
-          <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/find-teammates')}>
-            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
-              <CardTitle className="text-xs md:text-sm font-medium">Community</CardTitle>
-              <Users className="w-3 h-3 md:w-4 md:h-4 text-primary" />
-            </CardHeader>
+        <div className="mb-6 md:mb-8">
+          <h2 className="text-lg md:text-xl font-bold mb-4">Platform Features</h2>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
+            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/lost-found')}>
+              <CardContent className="p-4 md:p-6 text-center">
+                <Search className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
+                <h3 className="font-semibold text-sm md:text-base mb-1">Lost & Found</h3>
+                <p className="text-xs text-muted-foreground mb-2">Post lost or found items</p>
+                <Badge variant="secondary">{lostFoundData?.items?.length || 0} items</Badge>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/announcements')}>
+              <CardContent className="p-4 md:p-6 text-center">
+                <Megaphone className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
+                <h3 className="font-semibold text-sm md:text-base mb-1">Announcements</h3>
+                <p className="text-xs text-muted-foreground mb-2">Community updates</p>
+                <Badge variant="secondary">{announcementsData?.announcements?.length || 0} active</Badge>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/photo-gallery')}>
+              <CardContent className="p-4 md:p-6 text-center">
+                <Camera className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
+                <h3 className="font-semibold text-sm md:text-base mb-1">Photo Gallery</h3>
+                <p className="text-xs text-muted-foreground mb-2">Community photos</p>
+                <Badge variant="secondary">{galleriesData?.galleries?.length || 0} albums</Badge>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/marketplace')}>
+              <CardContent className="p-4 md:p-6 text-center">
+                <ShoppingCart className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
+                <h3 className="font-semibold text-sm md:text-base mb-1">Marketplace</h3>
+                <p className="text-xs text-muted-foreground mb-2">Buy, sell, exchange</p>
+                <Badge variant="secondary" className="bg-green-600 text-white">New</Badge>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/tool-rental')}>
+              <CardContent className="p-4 md:p-6 text-center">
+                <Wrench className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
+                <h3 className="font-semibold text-sm md:text-base mb-1">Tool Rental</h3>
+                <p className="text-xs text-muted-foreground mb-2">Rent or lend tools</p>
+                <Badge variant="secondary" className="bg-green-600 text-white">New</Badge>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/advertise')}>
+              <CardContent className="p-4 md:p-6 text-center">
+                <AdvertiseIcon className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
+                <h3 className="font-semibold text-sm md:text-base mb-1">Advertise</h3>
+                <p className="text-xs text-muted-foreground mb-2">Promote your services</p>
+                <Badge variant="secondary" className="bg-green-600 text-white">New</Badge>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <div className="mb-6 md:mb-8">
+          <h2 className="text-lg md:text-xl font-bold mb-4">Service Categories</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+            <Card className="hover-elevate cursor-pointer group">
+              <CardContent className="p-4 md:p-5 text-center">
+                <div className="text-3xl md:text-4xl mb-2">🍰</div>
+                <h3 className="font-semibold text-sm md:text-base mb-1">Food Network</h3>
+                <p className="text-xs text-muted-foreground">Tiffin, catering, baking</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer group">
+              <CardContent className="p-4 md:p-5 text-center">
+                <div className="text-3xl md:text-4xl mb-2">🚗</div>
+                <h3 className="font-semibold text-sm md:text-base mb-1">Smart Mobility</h3>
+                <p className="text-xs text-muted-foreground">Carpool, school run</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer group">
+              <CardContent className="p-4 md:p-5 text-center">
+                <div className="text-3xl md:text-4xl mb-2">🎁</div>
+                <h3 className="font-semibold text-sm md:text-base mb-1">Group Buying</h3>
+                <p className="text-xs text-muted-foreground">Bulk purchases, gifts</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer group">
+              <CardContent className="p-4 md:p-5 text-center">
+                <div className="text-3xl md:text-4xl mb-2">👶</div>
+                <h3 className="font-semibold text-sm md:text-base mb-1">Kids & Parenting</h3>
+                <p className="text-xs text-muted-foreground">Babysitting, playdates</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer group">
+              <CardContent className="p-4 md:p-5 text-center">
+                <div className="text-3xl md:text-4xl mb-2">📚</div>
+                <h3 className="font-semibold text-sm md:text-base mb-1">Learning & Classes</h3>
+                <p className="text-xs text-muted-foreground">Music, dance, tuition</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer group">
+              <CardContent className="p-4 md:p-5 text-center">
+                <div className="text-3xl md:text-4xl mb-2">🏥</div>
+                <h3 className="font-semibold text-sm md:text-base mb-1">Health & Wellness</h3>
+                <p className="text-xs text-muted-foreground">Doctor, yoga, therapy</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer group">
+              <CardContent className="p-4 md:p-5 text-center">
+                <div className="text-3xl md:text-4xl mb-2">💼</div>
+                <h3 className="font-semibold text-sm md:text-base mb-1">Professional</h3>
+                <p className="text-xs text-muted-foreground">Career, mentoring</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer group">
+              <CardContent className="p-4 md:p-5 text-center">
+                <div className="text-3xl md:text-4xl mb-2">💅</div>
+                <h3 className="font-semibold text-sm md:text-base mb-1">Beauty & Care</h3>
+                <p className="text-xs text-muted-foreground">Salon, mehendi, styling</p>
+              </CardContent>
+            </Card>
+
+            <Card className="hover-elevate cursor-pointer group">
+              <CardContent className="p-4 md:p-5 text-center">
+                <div className="text-3xl md:text-4xl mb-2">🎉</div>
+                <h3 className="font-semibold text-sm md:text-base mb-1">Event Organizing</h3>
+                <p className="text-xs text-muted-foreground">Parties, decoration</p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        <div className="mb-6 md:mb-8">
+          <h2 className="text-lg md:text-xl font-bold mb-4">Quick Stats</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 md:gap-4">
+            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/find-teammates')}>
+              <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
+                <CardTitle className="text-xs md:text-sm font-medium">Community</CardTitle>
+                <Users className="w-3 h-3 md:w-4 md:h-4 text-primary" />
+              </CardHeader>
             <CardContent className="p-3 md:p-4 pt-0">
               <div className="text-2xl md:text-3xl font-bold">{(usersData?.users.length || 0) + 1}</div>
               <p className="text-xs text-muted-foreground mt-1">Members</p>
@@ -246,6 +429,29 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
               <p className="text-xs text-muted-foreground mt-1">Upcoming</p>
             </CardContent>
           </Card>
+
+          <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/lost-found')}>
+            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
+              <CardTitle className="text-xs md:text-sm font-medium">Lost & Found</CardTitle>
+              <Search className="w-3 h-3 md:w-4 md:h-4 text-primary" />
+            </CardHeader>
+            <CardContent className="p-3 md:p-4 pt-0">
+              <div className="text-2xl md:text-3xl font-bold">{lostFoundData?.items?.length || 0}</div>
+              <p className="text-xs text-muted-foreground mt-1">Items</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/announcements')}>
+            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
+              <CardTitle className="text-xs md:text-sm font-medium">Announcements</CardTitle>
+              <Megaphone className="w-3 h-3 md:w-4 md:h-4 text-primary" />
+            </CardHeader>
+            <CardContent className="p-3 md:p-4 pt-0">
+              <div className="text-2xl md:text-3xl font-bold">{announcementsData?.announcements?.length || 0}</div>
+              <p className="text-xs text-muted-foreground mt-1">Active</p>
+            </CardContent>
+          </Card>
+          </div>
         </div>
 
         {recentJobs.length > 0 && (
@@ -286,6 +492,48 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
                       {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
                     </span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {activityData?.activities && activityData.activities.length > 0 && (
+          <Card className="mb-6 md:mb-8">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base md:text-lg flex items-center gap-2">
+                  <ActivityIcon className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+                  Recent Activity
+                </CardTitle>
+                <CardDescription className="text-xs md:text-sm mt-1">What's happening in Nirala Estate</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setLocation('/activity-feed')}>
+                View All <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {activityData.activities.map((activity: any) => (
+                  <div 
+                    key={activity.id} 
+                    className="flex items-start gap-3 p-3 md:p-4 rounded-lg border hover:bg-accent cursor-pointer transition-colors"
+                    onClick={() => setLocation('/activity-feed')}
+                  >
+                    <Avatar className="w-8 h-8">
+                      {activity.user?.profilePhotoUrl ? (
+                        <AvatarImage src={activity.user.profilePhotoUrl} alt={activity.user.fullName} />
+                      ) : (
+                        <AvatarFallback>{getInitials(activity.user?.fullName || 'U')}</AvatarFallback>
+                      )}
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm md:text-base line-clamp-2">{activity.content}</p>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>

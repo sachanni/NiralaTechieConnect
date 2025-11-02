@@ -1,7 +1,7 @@
-import { type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type MessageReaction, type InsertMessageReaction, type ReadReceipt, type InsertReadReceipt, type Job, type InsertJob, type JobApplication, type InsertJobApplication, type Idea, type InsertIdea, type IdeaInterest, type InsertIdeaInterest, type IdeaUpvote, type InsertIdeaUpvote, type IdeaComment, type InsertIdeaComment, type IdeaTeamApplication, type InsertIdeaTeamApplication, type SkillSwapSession, type InsertSkillSwapSession, type SkillSwapReview, type InsertSkillSwapReview, type Broadcast, type InsertBroadcast, type BroadcastView, type InsertBroadcastView, type AdminAction, type InsertAdminAction, type Event, type InsertEvent, type EventRsvp, type InsertEventRsvp, type EventCheckin, type InsertEventCheckin, type ForumCategory, type InsertForumCategory, type ForumPost, type InsertForumPost, type ForumReply, type InsertForumReply, type ForumVote, type InsertForumVote, type ForumReport, type InsertForumReport, users, conversations, messages, messageReactions, readReceipts, jobs, jobApplications, ideas, ideaInterests, ideaUpvotes, ideaComments, ideaTeamApplications, skillSwapSessions, skillSwapReviews, broadcasts, broadcastViews, adminActions, events, eventRsvps, eventCheckins, forumCategories, forumPosts, forumReplies, forumVotes, forumReports } from "@shared/schema";
+import { type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type MessageReaction, type InsertMessageReaction, type ReadReceipt, type InsertReadReceipt, type Job, type InsertJob, type JobApplication, type InsertJobApplication, type Idea, type InsertIdea, type IdeaInterest, type InsertIdeaInterest, type IdeaUpvote, type InsertIdeaUpvote, type IdeaComment, type InsertIdeaComment, type IdeaTeamApplication, type InsertIdeaTeamApplication, type SkillSwapSession, type InsertSkillSwapSession, type SkillSwapReview, type InsertSkillSwapReview, type Broadcast, type InsertBroadcast, type BroadcastView, type InsertBroadcastView, type AdminAction, type InsertAdminAction, type Event, type InsertEvent, type EventRsvp, type InsertEventRsvp, type EventCheckin, type InsertEventCheckin, type ForumCategory, type InsertForumCategory, type ForumPost, type InsertForumPost, type ForumReply, type InsertForumReply, type ForumVote, type InsertForumVote, type ForumReport, type InsertForumReport, type LostAndFound, type InsertLostAndFound, type CommunityAnnouncement, type InsertCommunityAnnouncement, users, conversations, messages, messageReactions, readReceipts, jobs, jobApplications, ideas, ideaInterests, ideaUpvotes, ideaComments, ideaTeamApplications, skillSwapSessions, skillSwapReviews, broadcasts, broadcastViews, adminActions, events, eventRsvps, eventCheckins, forumCategories, forumPosts, forumReplies, forumVotes, forumReports, lostAndFound, communityAnnouncements, activityFeed, activityLikes, galleries, galleryImages, galleryLikes, userPresence, marketplaceItems, marketplaceOffers, marketplaceFavorites, marketplaceReviews, rentalItems, rentalBookings, rentalReviews, rentalFavorites, advertisements, adPayments, adAnalytics } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { eq, and, gte, lte, like, sql, or, desc, ne } from "drizzle-orm";
+import { eq, and, gte, lte, like, ilike, sql, or, desc, ne } from "drizzle-orm";
 
 export interface SearchFilters {
   techStack?: string[];
@@ -18,6 +18,7 @@ export interface IStorage {
   updateUserPointsAndBadges(id: string, points: number, badges: string[]): Promise<User>;
   searchUsers(filters: SearchFilters): Promise<User[]>;
   getAllUsers(): Promise<User[]>;
+  getUsersByCategory(categoryId: string, roleFilter?: 'provider' | 'seeker'): Promise<User[]>;
   
   getOrCreateConversation(user1Id: string, user2Id: string): Promise<Conversation>;
   getUserConversations(userId: string): Promise<Array<Conversation & { otherUser: User; unreadCount: number; lastMessage?: Message }>>;
@@ -284,6 +285,26 @@ export class MemStorage implements IStorage {
 
   async getAllUsers(): Promise<User[]> {
     return Array.from(this.users.values());
+  }
+
+  async getUsersByCategory(categoryId: string, roleFilter?: 'provider' | 'seeker'): Promise<User[]> {
+    let results = Array.from(this.users.values());
+    
+    // Filter by active users only
+    results = results.filter(user => user.isActive === 1);
+    
+    // Filter by category
+    results = results.filter(user => user.serviceCategories.includes(categoryId));
+    
+    // Filter by role if specified
+    if (roleFilter) {
+      results = results.filter(user => {
+        const roles = (user.categoryRoles as Record<string, ('provider' | 'seeker')[]>)[categoryId];
+        return roles && roles.includes(roleFilter);
+      });
+    }
+    
+    return results;
   }
 
   async getOrCreateConversation(user1Id: string, user2Id: string): Promise<Conversation> {
@@ -1508,6 +1529,23 @@ export class PostgresStorage implements IStorage {
 
   async getAllUsers(): Promise<User[]> {
     return await db.select().from(users);
+  }
+
+  async getUsersByCategory(categoryId: string, roleFilter?: 'provider' | 'seeker'): Promise<User[]> {
+    const conditions = [
+      eq(users.isActive, 1),
+      sql`${users.serviceCategories} @> ARRAY[${categoryId}]::text[]`
+    ];
+
+    if (roleFilter) {
+      // Check if categoryRoles jsonb contains the role in the category's array
+      // categoryRoles format: {"categoryId": ["provider", "seeker"]}
+      conditions.push(
+        sql`${users.categoryRoles}->>${categoryId} LIKE '%${roleFilter}%'`
+      );
+    }
+
+    return await db.select().from(users).where(and(...conditions));
   }
 
   async getOrCreateConversation(user1Id: string, user2Id: string): Promise<Conversation> {
@@ -4181,6 +4219,1328 @@ export class PostgresStorage implements IStorage {
     }
 
     return result[0];
+  }
+
+  async getLostAndFoundItems(): Promise<LostAndFound[]> {
+    const result = await db
+      .select()
+      .from(lostAndFound)
+      .orderBy(desc(lostAndFound.createdAt));
+
+    return result;
+  }
+
+  async createLostAndFoundItem(item: InsertLostAndFound): Promise<LostAndFound> {
+    const result = await db
+      .insert(lostAndFound)
+      .values(item)
+      .returning();
+
+    return result[0];
+  }
+
+  async resolveLostAndFoundItem(itemId: string, userId: string): Promise<LostAndFound> {
+    const item = await db
+      .select()
+      .from(lostAndFound)
+      .where(eq(lostAndFound.id, itemId))
+      .limit(1);
+
+    if (item.length === 0) {
+      throw new Error('Item not found');
+    }
+
+    if (item[0].userId !== userId) {
+      throw new Error('Unauthorized');
+    }
+
+    const result = await db
+      .update(lostAndFound)
+      .set({
+        status: 'resolved',
+        resolvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(lostAndFound.id, itemId))
+      .returning();
+
+    return result[0];
+  }
+
+  async getApprovedAnnouncements(): Promise<CommunityAnnouncement[]> {
+    const result = await db
+      .select()
+      .from(communityAnnouncements)
+      .where(eq(communityAnnouncements.status, 'approved'))
+      .orderBy(desc(communityAnnouncements.createdAt));
+
+    return result;
+  }
+
+  async getPendingAnnouncements(): Promise<CommunityAnnouncement[]> {
+    const result = await db
+      .select()
+      .from(communityAnnouncements)
+      .where(eq(communityAnnouncements.status, 'pending'))
+      .orderBy(desc(communityAnnouncements.createdAt));
+
+    return result;
+  }
+
+  async createAnnouncement(announcement: InsertCommunityAnnouncement): Promise<CommunityAnnouncement> {
+    const result = await db
+      .insert(communityAnnouncements)
+      .values(announcement)
+      .returning();
+
+    return result[0];
+  }
+
+  async approveAnnouncement(announcementId: string, adminId: string): Promise<CommunityAnnouncement> {
+    const result = await db
+      .update(communityAnnouncements)
+      .set({
+        status: 'approved',
+        approvedBy: adminId,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(communityAnnouncements.id, announcementId))
+      .returning();
+
+    if (result.length === 0) {
+      throw new Error('Announcement not found');
+    }
+
+    return result[0];
+  }
+
+  async rejectAnnouncement(announcementId: string, reason: string): Promise<CommunityAnnouncement> {
+    const result = await db
+      .update(communityAnnouncements)
+      .set({
+        status: 'rejected',
+        rejectionReason: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(communityAnnouncements.id, announcementId))
+      .returning();
+
+    if (result.length === 0) {
+      throw new Error('Announcement not found');
+    }
+
+    return result[0];
+  }
+
+  // Activity Feed Methods
+  async getActivityFeed(options?: { userId?: string; limit?: number; offset?: number }): Promise<Array<any>> {
+    const limit = options?.limit || 50;
+    const offset = options?.offset || 0;
+
+    let query = db
+      .select({
+        id: activityFeed.id,
+        userId: activityFeed.userId,
+        activityType: activityFeed.activityType,
+        targetType: activityFeed.targetType,
+        targetId: activityFeed.targetId,
+        content: activityFeed.content,
+        metadata: activityFeed.metadata,
+        likeCount: activityFeed.likeCount,
+        createdAt: activityFeed.createdAt,
+        user: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+        },
+      })
+      .from(activityFeed)
+      .leftJoin(users, eq(activityFeed.userId, users.id))
+      .orderBy(desc(activityFeed.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const result = await query;
+    return result;
+  }
+
+  async createActivityEntry(entry: { userId: string; activityType: string; targetType: string; targetId: string; content: string; metadata?: string }): Promise<any> {
+    const result = await db
+      .insert(activityFeed)
+      .values({
+        userId: entry.userId,
+        activityType: entry.activityType,
+        targetType: entry.targetType,
+        targetId: entry.targetId,
+        content: entry.content,
+        metadata: entry.metadata || '{}',
+      })
+      .returning();
+
+    return result[0];
+  }
+
+  async likeActivity(activityId: string, userId: string): Promise<void> {
+    // Check if already liked
+    const existing = await db
+      .select()
+      .from(activityLikes)
+      .where(and(eq(activityLikes.activityId, activityId), eq(activityLikes.userId, userId)));
+
+    if (existing.length > 0) {
+      return; // Already liked
+    }
+
+    // Add like
+    await db.insert(activityLikes).values({ activityId, userId });
+
+    // Increment like count
+    await db
+      .update(activityFeed)
+      .set({ likeCount: sql`${activityFeed.likeCount} + 1` })
+      .where(eq(activityFeed.id, activityId));
+  }
+
+  async unlikeActivity(activityId: string, userId: string): Promise<void> {
+    // Remove like
+    await db
+      .delete(activityLikes)
+      .where(and(eq(activityLikes.activityId, activityId), eq(activityLikes.userId, userId)));
+
+    // Decrement like count
+    await db
+      .update(activityFeed)
+      .set({ likeCount: sql`${activityFeed.likeCount} - 1` })
+      .where(eq(activityFeed.id, activityId));
+  }
+
+  // Photo Galleries Methods
+  async getGalleries(filters?: { tags?: string[]; creatorId?: string }): Promise<Array<any>> {
+    let query = db
+      .select({
+        id: galleries.id,
+        creatorId: galleries.creatorId,
+        title: galleries.title,
+        description: galleries.description,
+        tags: galleries.tags,
+        likeCount: galleries.likeCount,
+        imageCount: galleries.imageCount,
+        createdAt: galleries.createdAt,
+        creator: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+        },
+      })
+      .from(galleries)
+      .leftJoin(users, eq(galleries.creatorId, users.id))
+      .orderBy(desc(galleries.createdAt));
+
+    const result = await query;
+    return result;
+  }
+
+  async getGallery(galleryId: string): Promise<any> {
+    const result = await db
+      .select({
+        id: galleries.id,
+        creatorId: galleries.creatorId,
+        title: galleries.title,
+        description: galleries.description,
+        tags: galleries.tags,
+        likeCount: galleries.likeCount,
+        imageCount: galleries.imageCount,
+        createdAt: galleries.createdAt,
+        creator: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+        },
+      })
+      .from(galleries)
+      .leftJoin(users, eq(galleries.creatorId, users.id))
+      .where(eq(galleries.id, galleryId));
+
+    if (result.length === 0) return undefined;
+
+    // Get images for this gallery
+    const images = await db
+      .select()
+      .from(galleryImages)
+      .where(eq(galleryImages.galleryId, galleryId))
+      .orderBy(galleryImages.sortOrder);
+
+    return { ...result[0], images };
+  }
+
+  async createGallery(gallery: { creatorId: string; title: string; description?: string; tags?: string[] }): Promise<any> {
+    const result = await db
+      .insert(galleries)
+      .values({
+        creatorId: gallery.creatorId,
+        title: gallery.title,
+        description: gallery.description || null,
+        tags: gallery.tags || [],
+      })
+      .returning();
+
+    return result[0];
+  }
+
+  async uploadGalleryImage(galleryId: string, image: { imageUrl: string; caption?: string; sortOrder?: number }): Promise<any> {
+    const result = await db
+      .insert(galleryImages)
+      .values({
+        galleryId,
+        imageUrl: image.imageUrl,
+        caption: image.caption || null,
+        sortOrder: image.sortOrder || 0,
+      })
+      .returning();
+
+    // Increment image count
+    await db
+      .update(galleries)
+      .set({ imageCount: sql`${galleries.imageCount} + 1` })
+      .where(eq(galleries.id, galleryId));
+
+    return result[0];
+  }
+
+  async likeGallery(galleryId: string, userId: string): Promise<void> {
+    // Check if already liked
+    const existing = await db
+      .select()
+      .from(galleryLikes)
+      .where(and(eq(galleryLikes.galleryId, galleryId), eq(galleryLikes.userId, userId)));
+
+    if (existing.length > 0) {
+      return; // Already liked
+    }
+
+    // Add like
+    await db.insert(galleryLikes).values({ galleryId, userId });
+
+    // Increment like count
+    await db
+      .update(galleries)
+      .set({ likeCount: sql`${galleries.likeCount} + 1` })
+      .where(eq(galleries.id, galleryId));
+  }
+
+  async unlikeGallery(galleryId: string, userId: string): Promise<void> {
+    // Remove like
+    await db
+      .delete(galleryLikes)
+      .where(and(eq(galleryLikes.galleryId, galleryId), eq(galleryLikes.userId, userId)));
+
+    // Decrement like count
+    await db
+      .update(galleries)
+      .set({ likeCount: sql`${galleries.likeCount} - 1` })
+      .where(eq(galleries.id, galleryId));
+  }
+
+  // User Presence Methods
+  async updateUserPresence(userId: string, status: 'online' | 'offline'): Promise<void> {
+    const existing = await db
+      .select()
+      .from(userPresence)
+      .where(eq(userPresence.userId, userId));
+
+    if (existing.length === 0) {
+      // Create presence record
+      await db.insert(userPresence).values({
+        userId,
+        status,
+        lastSeenAt: new Date(),
+      });
+    } else {
+      // Update presence record
+      await db
+        .update(userPresence)
+        .set({
+          status,
+          lastSeenAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(userPresence.userId, userId));
+    }
+  }
+
+  async getOnlineUsers(): Promise<Array<any>> {
+    const result = await db
+      .select({
+        id: users.id,
+        fullName: users.fullName,
+        profilePhotoUrl: users.profilePhotoUrl,
+        occupation: users.occupation,
+        company: users.company,
+        flatNumber: users.flatNumber,
+        lastSeenAt: userPresence.lastSeenAt,
+      })
+      .from(userPresence)
+      .leftJoin(users, eq(userPresence.userId, users.id))
+      .where(eq(userPresence.status, 'online'))
+      .orderBy(desc(userPresence.lastSeenAt));
+
+    return result;
+  }
+
+  async getUserPresence(userId: string): Promise<any> {
+    const result = await db
+      .select()
+      .from(userPresence)
+      .where(eq(userPresence.userId, userId));
+
+    return result.length > 0 ? result[0] : null;
+  }
+
+  // Marketplace Methods
+  async createMarketplaceItem(data: any): Promise<any> {
+    const result = await db.insert(marketplaceItems).values(data).returning();
+    return result[0];
+  }
+
+  async getMarketplaceItems(filters?: {
+    category?: string;
+    listingType?: string;
+    status?: string;
+    sellerId?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    searchQuery?: string;
+  }): Promise<Array<any>> {
+    let query = db
+      .select({
+        id: marketplaceItems.id,
+        seller: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+        },
+        title: marketplaceItems.title,
+        description: marketplaceItems.description,
+        category: marketplaceItems.category,
+        condition: marketplaceItems.condition,
+        listingType: marketplaceItems.listingType,
+        price: marketplaceItems.price,
+        negotiable: marketplaceItems.negotiable,
+        images: marketplaceItems.images,
+        location: marketplaceItems.location,
+        status: marketplaceItems.status,
+        viewCount: marketplaceItems.viewCount,
+        favoriteCount: marketplaceItems.favoriteCount,
+        createdAt: marketplaceItems.createdAt,
+        updatedAt: marketplaceItems.updatedAt,
+      })
+      .from(marketplaceItems)
+      .leftJoin(users, eq(marketplaceItems.sellerId, users.id))
+      .orderBy(desc(marketplaceItems.createdAt))
+      .$dynamic();
+
+    const conditions = [];
+    
+    if (filters?.category) {
+      conditions.push(eq(marketplaceItems.category, filters.category));
+    }
+    if (filters?.listingType) {
+      conditions.push(eq(marketplaceItems.listingType, filters.listingType));
+    }
+    if (filters?.status) {
+      conditions.push(eq(marketplaceItems.status, filters.status));
+    } else {
+      conditions.push(eq(marketplaceItems.status, 'available'));
+    }
+    if (filters?.sellerId) {
+      conditions.push(eq(marketplaceItems.sellerId, filters.sellerId));
+    }
+    if (filters?.minPrice) {
+      conditions.push(gte(marketplaceItems.price, filters.minPrice));
+    }
+    if (filters?.maxPrice) {
+      conditions.push(lte(marketplaceItems.price, filters.maxPrice));
+    }
+    if (filters?.searchQuery) {
+      conditions.push(
+        or(
+          ilike(marketplaceItems.title, `%${filters.searchQuery}%`),
+          ilike(marketplaceItems.description, `%${filters.searchQuery}%`)
+        )!
+      );
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)!);
+    }
+
+    const result = await query;
+    return result;
+  }
+
+  async getMarketplaceItem(id: string): Promise<any> {
+    const result = await db
+      .select({
+        id: marketplaceItems.id,
+        seller: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+          phoneNumber: users.phoneNumber,
+          email: users.email,
+        },
+        title: marketplaceItems.title,
+        description: marketplaceItems.description,
+        category: marketplaceItems.category,
+        condition: marketplaceItems.condition,
+        listingType: marketplaceItems.listingType,
+        price: marketplaceItems.price,
+        negotiable: marketplaceItems.negotiable,
+        images: marketplaceItems.images,
+        location: marketplaceItems.location,
+        status: marketplaceItems.status,
+        viewCount: marketplaceItems.viewCount,
+        favoriteCount: marketplaceItems.favoriteCount,
+        soldAt: marketplaceItems.soldAt,
+        soldTo: marketplaceItems.soldTo,
+        createdAt: marketplaceItems.createdAt,
+        updatedAt: marketplaceItems.updatedAt,
+      })
+      .from(marketplaceItems)
+      .leftJoin(users, eq(marketplaceItems.sellerId, users.id))
+      .where(eq(marketplaceItems.id, id));
+
+    // Increment view count
+    if (result.length > 0) {
+      await db
+        .update(marketplaceItems)
+        .set({ viewCount: sql`${marketplaceItems.viewCount} + 1` })
+        .where(eq(marketplaceItems.id, id));
+    }
+
+    return result.length > 0 ? result[0] : null;
+  }
+
+  async updateMarketplaceItem(id: string, sellerId: string, data: any): Promise<any> {
+    // Verify seller owns the item
+    const item = await db
+      .select()
+      .from(marketplaceItems)
+      .where(and(eq(marketplaceItems.id, id), eq(marketplaceItems.sellerId, sellerId))!);
+
+    if (item.length === 0) {
+      throw new Error('Unauthorized');
+    }
+
+    const result = await db
+      .update(marketplaceItems)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(marketplaceItems.id, id))
+      .returning();
+
+    return result[0];
+  }
+
+  async deleteMarketplaceItem(id: string, sellerId: string): Promise<void> {
+    // Verify seller owns the item
+    const item = await db
+      .select()
+      .from(marketplaceItems)
+      .where(and(eq(marketplaceItems.id, id), eq(marketplaceItems.sellerId, sellerId))!);
+
+    if (item.length === 0) {
+      throw new Error('Unauthorized');
+    }
+
+    await db
+      .update(marketplaceItems)
+      .set({ status: 'deleted', updatedAt: new Date() })
+      .where(eq(marketplaceItems.id, id));
+  }
+
+  async markItemAsSold(id: string, sellerId: string, buyerId: string): Promise<any> {
+    // Verify seller owns the item
+    const item = await db
+      .select()
+      .from(marketplaceItems)
+      .where(and(eq(marketplaceItems.id, id), eq(marketplaceItems.sellerId, sellerId))!);
+
+    if (item.length === 0) {
+      throw new Error('Unauthorized');
+    }
+
+    const result = await db
+      .update(marketplaceItems)
+      .set({
+        status: 'sold',
+        soldAt: new Date(),
+        soldTo: buyerId,
+        updatedAt: new Date(),
+      })
+      .where(eq(marketplaceItems.id, id))
+      .returning();
+
+    return result[0];
+  }
+
+  async toggleMarketplaceFavorite(itemId: string, userId: string): Promise<{ isFavorited: boolean }> {
+    const existing = await db
+      .select()
+      .from(marketplaceFavorites)
+      .where(and(eq(marketplaceFavorites.itemId, itemId), eq(marketplaceFavorites.userId, userId))!);
+
+    if (existing.length > 0) {
+      await db
+        .delete(marketplaceFavorites)
+        .where(and(eq(marketplaceFavorites.itemId, itemId), eq(marketplaceFavorites.userId, userId))!);
+      
+      await db
+        .update(marketplaceItems)
+        .set({ favoriteCount: sql`${marketplaceItems.favoriteCount} - 1` })
+        .where(eq(marketplaceItems.id, itemId));
+
+      return { isFavorited: false };
+    } else {
+      await db.insert(marketplaceFavorites).values({ itemId, userId });
+      
+      await db
+        .update(marketplaceItems)
+        .set({ favoriteCount: sql`${marketplaceItems.favoriteCount} + 1` })
+        .where(eq(marketplaceItems.id, itemId));
+
+      return { isFavorited: true };
+    }
+  }
+
+  async createMarketplaceOffer(data: any): Promise<any> {
+    const result = await db.insert(marketplaceOffers).values(data).returning();
+    return result[0];
+  }
+
+  async getMarketplaceOffers(itemId: string, sellerId: string): Promise<Array<any>> {
+    // Verify seller owns the item
+    const item = await db
+      .select()
+      .from(marketplaceItems)
+      .where(and(eq(marketplaceItems.id, itemId), eq(marketplaceItems.sellerId, sellerId))!);
+
+    if (item.length === 0) {
+      throw new Error('Unauthorized');
+    }
+
+    const result = await db
+      .select({
+        id: marketplaceOffers.id,
+        buyer: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+        },
+        offerAmount: marketplaceOffers.offerAmount,
+        exchangeOffer: marketplaceOffers.exchangeOffer,
+        message: marketplaceOffers.message,
+        status: marketplaceOffers.status,
+        createdAt: marketplaceOffers.createdAt,
+        respondedAt: marketplaceOffers.respondedAt,
+      })
+      .from(marketplaceOffers)
+      .leftJoin(users, eq(marketplaceOffers.buyerId, users.id))
+      .where(eq(marketplaceOffers.itemId, itemId))
+      .orderBy(desc(marketplaceOffers.createdAt));
+
+    return result;
+  }
+
+  async updateOfferStatus(offerId: string, sellerId: string, status: string): Promise<any> {
+    // Verify seller owns the item
+    const offer = await db
+      .select({
+        offer: marketplaceOffers,
+        item: marketplaceItems,
+      })
+      .from(marketplaceOffers)
+      .leftJoin(marketplaceItems, eq(marketplaceOffers.itemId, marketplaceItems.id))
+      .where(eq(marketplaceOffers.id, offerId));
+
+    if (offer.length === 0 || !offer[0].item || offer[0].item.sellerId !== sellerId) {
+      throw new Error('Unauthorized');
+    }
+
+    const result = await db
+      .update(marketplaceOffers)
+      .set({ status, respondedAt: new Date() })
+      .where(eq(marketplaceOffers.id, offerId))
+      .returning();
+
+    return result[0];
+  }
+
+  async createMarketplaceReview(data: any): Promise<any> {
+    const result = await db.insert(marketplaceReviews).values(data).returning();
+    return result[0];
+  }
+
+  async getUserMarketplaceFavorites(userId: string): Promise<Array<any>> {
+    const result = await db
+      .select({
+        id: marketplaceItems.id,
+        seller: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+        },
+        title: marketplaceItems.title,
+        description: marketplaceItems.description,
+        category: marketplaceItems.category,
+        condition: marketplaceItems.condition,
+        listingType: marketplaceItems.listingType,
+        price: marketplaceItems.price,
+        negotiable: marketplaceItems.negotiable,
+        images: marketplaceItems.images,
+        location: marketplaceItems.location,
+        status: marketplaceItems.status,
+        viewCount: marketplaceItems.viewCount,
+        favoriteCount: marketplaceItems.favoriteCount,
+        createdAt: marketplaceItems.createdAt,
+        favoritedAt: marketplaceFavorites.createdAt,
+      })
+      .from(marketplaceFavorites)
+      .leftJoin(marketplaceItems, eq(marketplaceFavorites.itemId, marketplaceItems.id))
+      .leftJoin(users, eq(marketplaceItems.sellerId, users.id))
+      .where(eq(marketplaceFavorites.userId, userId))
+      .orderBy(desc(marketplaceFavorites.createdAt));
+
+    return result;
+  }
+
+  async getRentalItems(filters: any = {}): Promise<Array<any>> {
+    let query = db
+      .select({
+        id: rentalItems.id,
+        owner: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+        },
+        itemName: rentalItems.itemName,
+        description: rentalItems.description,
+        category: rentalItems.category,
+        condition: rentalItems.condition,
+        images: rentalItems.images,
+        rentalPrice: rentalItems.rentalPrice,
+        priceUnit: rentalItems.priceUnit,
+        deposit: rentalItems.deposit,
+        minRentalDuration: rentalItems.minRentalDuration,
+        maxRentalDuration: rentalItems.maxRentalDuration,
+        location: rentalItems.location,
+        availability: rentalItems.availability,
+        favoriteCount: rentalItems.favoriteCount,
+        totalRentals: rentalItems.totalRentals,
+        averageRating: rentalItems.averageRating,
+        createdAt: rentalItems.createdAt,
+      })
+      .from(rentalItems)
+      .leftJoin(users, eq(rentalItems.ownerId, users.id));
+
+    const conditions = [];
+
+    // Only filter by availability for public queries (not owner queries)
+    if (!filters.ownerId && filters.availability !== undefined) {
+      conditions.push(eq(rentalItems.availability, filters.availability));
+    } else if (!filters.ownerId) {
+      // Default: show only available items for public browsing
+      conditions.push(eq(rentalItems.availability, 'available'));
+    }
+
+    if (filters.category) {
+      conditions.push(eq(rentalItems.category, filters.category));
+    }
+
+    if (filters.ownerId) {
+      conditions.push(eq(rentalItems.ownerId, filters.ownerId));
+    }
+
+    if (filters.minPrice) {
+      conditions.push(gte(rentalItems.rentalPrice, filters.minPrice));
+    }
+
+    if (filters.maxPrice) {
+      conditions.push(lte(rentalItems.rentalPrice, filters.maxPrice));
+    }
+
+    if (filters.searchQuery) {
+      conditions.push(
+        or(
+          ilike(rentalItems.itemName, `%${filters.searchQuery}%`),
+          ilike(rentalItems.description, `%${filters.searchQuery}%`)
+        )!
+      );
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    const result = await query.orderBy(desc(rentalItems.createdAt));
+    return result;
+  }
+
+  async createRentalItem(data: any): Promise<any> {
+    const result = await db.insert(rentalItems).values({
+      id: randomUUID(),
+      ...data,
+    }).returning();
+    return result[0];
+  }
+
+  async getRentalItem(itemId: string): Promise<any> {
+    const result = await db
+      .select({
+        id: rentalItems.id,
+        owner: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+          phoneNumber: users.phoneNumber,
+        },
+        itemName: rentalItems.itemName,
+        description: rentalItems.description,
+        category: rentalItems.category,
+        condition: rentalItems.condition,
+        images: rentalItems.images,
+        rentalPrice: rentalItems.rentalPrice,
+        priceUnit: rentalItems.priceUnit,
+        deposit: rentalItems.deposit,
+        minRentalDuration: rentalItems.minRentalDuration,
+        maxRentalDuration: rentalItems.maxRentalDuration,
+        location: rentalItems.location,
+        availability: rentalItems.availability,
+        favoriteCount: rentalItems.favoriteCount,
+        totalRentals: rentalItems.totalRentals,
+        averageRating: rentalItems.averageRating,
+        createdAt: rentalItems.createdAt,
+      })
+      .from(rentalItems)
+      .leftJoin(users, eq(rentalItems.ownerId, users.id))
+      .where(eq(rentalItems.id, itemId));
+
+    return result[0] || null;
+  }
+
+  async updateRentalItem(itemId: string, ownerId: string, updates: any): Promise<any> {
+    const existingItem = await db
+      .select()
+      .from(rentalItems)
+      .where(eq(rentalItems.id, itemId));
+
+    if (existingItem.length === 0 || existingItem[0].ownerId !== ownerId) {
+      throw new Error('Unauthorized');
+    }
+
+    const result = await db
+      .update(rentalItems)
+      .set(updates)
+      .where(eq(rentalItems.id, itemId))
+      .returning();
+
+    return result[0];
+  }
+
+  async deleteRentalItem(itemId: string, ownerId: string): Promise<void> {
+    const existingItem = await db
+      .select()
+      .from(rentalItems)
+      .where(eq(rentalItems.id, itemId));
+
+    if (existingItem.length === 0 || existingItem[0].ownerId !== ownerId) {
+      throw new Error('Unauthorized');
+    }
+
+    await db.delete(rentalItems).where(eq(rentalItems.id, itemId));
+  }
+
+  async checkRentalAvailability(itemId: string, startDate: Date, endDate: Date): Promise<boolean> {
+    const conflicts = await db
+      .select()
+      .from(rentalBookings)
+      .where(
+        and(
+          eq(rentalBookings.itemId, itemId),
+          or(
+            eq(rentalBookings.status, 'confirmed'),
+            eq(rentalBookings.status, 'active')
+          ),
+          or(
+            and(
+              lte(rentalBookings.startDate, startDate),
+              gte(rentalBookings.endDate, startDate)
+            ),
+            and(
+              lte(rentalBookings.startDate, endDate),
+              gte(rentalBookings.endDate, endDate)
+            ),
+            and(
+              gte(rentalBookings.startDate, startDate),
+              lte(rentalBookings.endDate, endDate)
+            )
+          )
+        )
+      );
+
+    return conflicts.length === 0;
+  }
+
+  async createRentalBooking(data: any): Promise<any> {
+    const isAvailable = await this.checkRentalAvailability(data.itemId, data.startDate, data.endDate);
+    if (!isAvailable) {
+      throw new Error('Item not available for selected dates');
+    }
+
+    const result = await db.insert(rentalBookings).values({
+      id: randomUUID(),
+      ...data,
+      status: 'pending',
+    }).returning();
+
+    return result[0];
+  }
+
+  async getRentalBookings(itemId: string, ownerId: string): Promise<Array<any>> {
+    const item = await db
+      .select()
+      .from(rentalItems)
+      .where(eq(rentalItems.id, itemId));
+
+    if (item.length === 0 || item[0].ownerId !== ownerId) {
+      throw new Error('Unauthorized');
+    }
+
+    const result = await db
+      .select({
+        id: rentalBookings.id,
+        renter: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+        },
+        startDate: rentalBookings.startDate,
+        endDate: rentalBookings.endDate,
+        totalAmount: rentalBookings.totalAmount,
+        depositPaid: rentalBookings.depositPaid,
+        status: rentalBookings.status,
+        notes: rentalBookings.notes,
+        createdAt: rentalBookings.createdAt,
+        confirmedAt: rentalBookings.confirmedAt,
+        completedAt: rentalBookings.completedAt,
+      })
+      .from(rentalBookings)
+      .leftJoin(users, eq(rentalBookings.renterId, users.id))
+      .where(eq(rentalBookings.itemId, itemId))
+      .orderBy(desc(rentalBookings.createdAt));
+
+    return result;
+  }
+
+  async getUserRentalBookings(userId: string): Promise<Array<any>> {
+    const result = await db
+      .select({
+        id: rentalBookings.id,
+        item: {
+          id: rentalItems.id,
+          itemName: rentalItems.itemName,
+          images: rentalItems.images,
+          rentalPrice: rentalItems.rentalPrice,
+          priceUnit: rentalItems.priceUnit,
+        },
+        owner: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+        },
+        startDate: rentalBookings.startDate,
+        endDate: rentalBookings.endDate,
+        totalAmount: rentalBookings.totalAmount,
+        depositPaid: rentalBookings.depositPaid,
+        status: rentalBookings.status,
+        notes: rentalBookings.notes,
+        createdAt: rentalBookings.createdAt,
+        confirmedAt: rentalBookings.confirmedAt,
+        completedAt: rentalBookings.completedAt,
+      })
+      .from(rentalBookings)
+      .leftJoin(rentalItems, eq(rentalBookings.itemId, rentalItems.id))
+      .leftJoin(users, eq(rentalItems.ownerId, users.id))
+      .where(eq(rentalBookings.renterId, userId))
+      .orderBy(desc(rentalBookings.createdAt));
+
+    return result;
+  }
+
+  async updateBookingStatus(bookingId: string, ownerId: string, status: string): Promise<any> {
+    const booking = await db
+      .select({
+        booking: rentalBookings,
+        item: rentalItems,
+      })
+      .from(rentalBookings)
+      .leftJoin(rentalItems, eq(rentalBookings.itemId, rentalItems.id))
+      .where(eq(rentalBookings.id, bookingId));
+
+    if (booking.length === 0 || !booking[0].item || booking[0].item.ownerId !== ownerId) {
+      throw new Error('Unauthorized');
+    }
+
+    const updates: any = { status };
+    if (status === 'confirmed') updates.confirmedAt = new Date();
+    if (status === 'completed') updates.completedAt = new Date();
+
+    const result = await db
+      .update(rentalBookings)
+      .set(updates)
+      .where(eq(rentalBookings.id, bookingId))
+      .returning();
+
+    return result[0];
+  }
+
+  async toggleRentalFavorite(itemId: string, userId: string): Promise<{ favorited: boolean }> {
+    const existing = await db
+      .select()
+      .from(rentalFavorites)
+      .where(
+        and(
+          eq(rentalFavorites.itemId, itemId),
+          eq(rentalFavorites.userId, userId)
+        )
+      );
+
+    if (existing.length > 0) {
+      await db
+        .delete(rentalFavorites)
+        .where(
+          and(
+            eq(rentalFavorites.itemId, itemId),
+            eq(rentalFavorites.userId, userId)
+          )
+        );
+
+      await db
+        .update(rentalItems)
+        .set({ favoriteCount: sql`${rentalItems.favoriteCount} - 1` })
+        .where(eq(rentalItems.id, itemId));
+
+      return { favorited: false };
+    } else {
+      await db.insert(rentalFavorites).values({
+        id: randomUUID(),
+        itemId,
+        userId,
+      });
+
+      await db
+        .update(rentalItems)
+        .set({ favoriteCount: sql`${rentalItems.favoriteCount} + 1` })
+        .where(eq(rentalItems.id, itemId));
+
+      return { favorited: true };
+    }
+  }
+
+  async getUserRentalFavorites(userId: string): Promise<Array<any>> {
+    const result = await db
+      .select({
+        id: rentalItems.id,
+        owner: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+        },
+        itemName: rentalItems.itemName,
+        description: rentalItems.description,
+        category: rentalItems.category,
+        condition: rentalItems.condition,
+        images: rentalItems.images,
+        rentalPrice: rentalItems.rentalPrice,
+        priceUnit: rentalItems.priceUnit,
+        deposit: rentalItems.deposit,
+        location: rentalItems.location,
+        availability: rentalItems.availability,
+        favoriteCount: rentalItems.favoriteCount,
+        averageRating: rentalItems.averageRating,
+        createdAt: rentalItems.createdAt,
+        favoritedAt: rentalFavorites.createdAt,
+      })
+      .from(rentalFavorites)
+      .leftJoin(rentalItems, eq(rentalFavorites.itemId, rentalItems.id))
+      .leftJoin(users, eq(rentalItems.ownerId, users.id))
+      .where(eq(rentalFavorites.userId, userId))
+      .orderBy(desc(rentalFavorites.createdAt));
+
+    return result;
+  }
+
+  async createRentalReview(data: any): Promise<any> {
+    const result = await db.insert(rentalReviews).values({
+      id: randomUUID(),
+      ...data,
+    }).returning();
+
+    const reviews = await db
+      .select()
+      .from(rentalReviews)
+      .where(eq(rentalReviews.itemId, data.itemId));
+
+    const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+
+    await db
+      .update(rentalItems)
+      .set({ averageRating: avgRating })
+      .where(eq(rentalItems.id, data.itemId));
+
+    return result[0];
+  }
+
+  async getAdvertisements(filters: any = {}): Promise<Array<any>> {
+    let query = db
+      .select({
+        id: advertisements.id,
+        advertiser: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+        },
+        title: advertisements.title,
+        description: advertisements.description,
+        serviceCategory: advertisements.serviceCategory,
+        imageUrl: advertisements.imageUrl,
+        pricing: advertisements.pricing,
+        contactInfo: advertisements.contactInfo,
+        duration: advertisements.duration,
+        startDate: advertisements.startDate,
+        endDate: advertisements.endDate,
+        status: advertisements.status,
+        viewCount: advertisements.viewCount,
+        clickCount: advertisements.clickCount,
+        createdAt: advertisements.createdAt,
+      })
+      .from(advertisements)
+      .leftJoin(users, eq(advertisements.advertiserId, users.id));
+
+    const conditions = [];
+
+    if (filters.status) {
+      conditions.push(eq(advertisements.status, filters.status));
+    } else if (!filters.advertiserId) {
+      // Public: only show active ads
+      conditions.push(eq(advertisements.status, 'active'));
+    }
+
+    if (filters.advertiserId) {
+      conditions.push(eq(advertisements.advertiserId, filters.advertiserId));
+    }
+
+    if (filters.serviceCategory) {
+      conditions.push(eq(advertisements.serviceCategory, filters.serviceCategory));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions));
+    }
+
+    const result = await query.orderBy(desc(advertisements.createdAt));
+    return result;
+  }
+
+  async createAdvertisement(data: any): Promise<any> {
+    const result = await db.insert(advertisements).values({
+      id: randomUUID(),
+      ...data,
+      status: 'pending',
+    }).returning();
+    return result[0];
+  }
+
+  async getAdvertisement(adId: string): Promise<any> {
+    const result = await db
+      .select({
+        id: advertisements.id,
+        advertiser: {
+          id: users.id,
+          fullName: users.fullName,
+          profilePhotoUrl: users.profilePhotoUrl,
+          flatNumber: users.flatNumber,
+          phoneNumber: users.phoneNumber,
+          email: users.email,
+        },
+        title: advertisements.title,
+        description: advertisements.description,
+        serviceCategory: advertisements.serviceCategory,
+        imageUrl: advertisements.imageUrl,
+        servicePageContent: advertisements.servicePageContent,
+        pricing: advertisements.pricing,
+        contactInfo: advertisements.contactInfo,
+        duration: advertisements.duration,
+        startDate: advertisements.startDate,
+        endDate: advertisements.endDate,
+        status: advertisements.status,
+        viewCount: advertisements.viewCount,
+        clickCount: advertisements.clickCount,
+        rejectionReason: advertisements.rejectionReason,
+        createdAt: advertisements.createdAt,
+      })
+      .from(advertisements)
+      .leftJoin(users, eq(advertisements.advertiserId, users.id))
+      .where(eq(advertisements.id, adId));
+
+    return result[0] || null;
+  }
+
+  async updateAdvertisement(adId: string, advertiserId: string, updates: any): Promise<any> {
+    const existingAd = await db
+      .select()
+      .from(advertisements)
+      .where(eq(advertisements.id, adId));
+
+    if (existingAd.length === 0 || existingAd[0].advertiserId !== advertiserId) {
+      throw new Error('Unauthorized');
+    }
+
+    const result = await db
+      .update(advertisements)
+      .set(updates)
+      .where(eq(advertisements.id, adId))
+      .returning();
+
+    return result[0];
+  }
+
+  async deleteAdvertisement(adId: string, advertiserId: string): Promise<void> {
+    const existingAd = await db
+      .select()
+      .from(advertisements)
+      .where(eq(advertisements.id, adId));
+
+    if (existingAd.length === 0 || existingAd[0].advertiserId !== advertiserId) {
+      throw new Error('Unauthorized');
+    }
+
+    await db.delete(advertisements).where(eq(advertisements.id, adId));
+  }
+
+  async approveAdvertisement(adId: string, duration: number): Promise<any> {
+    const startDate = new Date();
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + duration);
+
+    const result = await db
+      .update(advertisements)
+      .set({
+        status: 'active',
+        startDate,
+        endDate,
+      })
+      .where(eq(advertisements.id, adId))
+      .returning();
+
+    return result[0];
+  }
+
+  async rejectAdvertisement(adId: string, reason: string): Promise<any> {
+    const result = await db
+      .update(advertisements)
+      .set({
+        status: 'rejected',
+        rejectionReason: reason,
+      })
+      .where(eq(advertisements.id, adId))
+      .returning();
+
+    return result[0];
+  }
+
+  async trackAdView(adId: string, userId?: string): Promise<void> {
+    await db
+      .update(advertisements)
+      .set({ viewCount: sql`${advertisements.viewCount} + 1` })
+      .where(eq(advertisements.id, adId));
+
+    await db.insert(adAnalytics).values({
+      id: randomUUID(),
+      advertisementId: adId,
+      userId: userId || null,
+      action: 'view',
+    });
+  }
+
+  async trackAdClick(adId: string, userId?: string): Promise<void> {
+    await db
+      .update(advertisements)
+      .set({ clickCount: sql`${advertisements.clickCount} + 1` })
+      .where(eq(advertisements.id, adId));
+
+    await db.insert(adAnalytics).values({
+      id: randomUUID(),
+      advertisementId: adId,
+      userId: userId || null,
+      action: 'click',
+    });
+  }
+
+  async createAdPayment(data: any): Promise<any> {
+    const result = await db.insert(adPayments).values({
+      id: randomUUID(),
+      ...data,
+      status: 'pending',
+    }).returning();
+    return result[0];
+  }
+
+  async getAdPayment(paymentId: string): Promise<any> {
+    const result = await db
+      .select()
+      .from(adPayments)
+      .where(eq(adPayments.id, paymentId));
+
+    return result[0] || null;
+  }
+
+  async updateAdPaymentStatus(paymentId: string, updates: any): Promise<any> {
+    const result = await db
+      .update(adPayments)
+      .set(updates)
+      .where(eq(adPayments.id, paymentId))
+      .returning();
+
+    return result[0];
+  }
+
+  async getAdAnalytics(adId: string): Promise<any> {
+    const analytics = await db
+      .select()
+      .from(adAnalytics)
+      .where(eq(adAnalytics.advertisementId, adId))
+      .orderBy(desc(adAnalytics.createdAt));
+
+    const viewCount = analytics.filter(a => a.action === 'view').length;
+    const clickCount = analytics.filter(a => a.action === 'click').length;
+
+    return {
+      totalViews: viewCount,
+      totalClicks: clickCount,
+      clickThroughRate: viewCount > 0 ? (clickCount / viewCount) * 100 : 0,
+      analytics,
+    };
   }
 }
 
