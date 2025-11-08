@@ -14,6 +14,7 @@ export interface SearchFilters {
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByPhone(phoneNumber: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserPointsAndBadges(id: string, points: number, badges: string[]): Promise<User>;
   searchUsers(filters: SearchFilters): Promise<User[]>;
@@ -213,6 +214,12 @@ export class MemStorage implements IStorage {
   async getUserByPhone(phoneNumber: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(
       (user) => user.phoneNumber === phoneNumber,
+    );
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.email === email,
     );
   }
 
@@ -1473,6 +1480,11 @@ export class PostgresStorage implements IStorage {
 
   async getUserByPhone(phoneNumber: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.phoneNumber, phoneNumber)).limit(1);
+    return result[0];
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
     return result[0];
   }
 

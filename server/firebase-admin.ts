@@ -36,3 +36,34 @@ export async function getPhoneNumberFromToken(idToken: string): Promise<string> 
   }
   return decodedToken.phone_number;
 }
+
+export async function getUserIdentifierFromToken(idToken: string): Promise<{ type: 'phone' | 'email', value: string }> {
+  const decodedToken = await verifyIdToken(idToken);
+  
+  if (decodedToken.phone_number) {
+    return { type: 'phone', value: decodedToken.phone_number };
+  } else if (decodedToken.email) {
+    return { type: 'email', value: decodedToken.email };
+  } else {
+    throw new Error('Token has neither phone number nor email');
+  }
+}
+
+export async function updateUserPassword(userId: string, newPassword: string, email?: string): Promise<void> {
+  try {
+    const updateData: admin.auth.UpdateRequest = {
+      password: newPassword
+    };
+    
+    // If email is provided, set it in Firebase Auth (enables email/password login)
+    if (email) {
+      updateData.email = email;
+      updateData.emailVerified = true; // Mark as verified since they proved ownership via reset token
+    }
+    
+    await auth.updateUser(userId, updateData);
+  } catch (error) {
+    console.error('Failed to update password:', error);
+    throw new Error('Failed to update password');
+  }
+}

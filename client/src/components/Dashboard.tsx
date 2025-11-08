@@ -129,6 +129,9 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
     },
     enabled: !!idToken,
     retry: false,
+    meta: {
+      errorHandler: 'none', // Silent check - don't show error toasts for non-admin users
+    },
   });
 
   const { data: lostFoundData } = useQuery<{ items: any[] }>({

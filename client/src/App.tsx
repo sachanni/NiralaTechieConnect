@@ -8,6 +8,9 @@ import { useToast } from "@/hooks/use-toast";
 import LandingPage from "@/components/LandingPage";
 import CategorySelector from "@/pages/CategorySelector";
 import PhoneVerification from "@/components/PhoneVerification";
+import EmailPasswordLogin from "@/components/EmailPasswordLogin";
+import PasswordResetForm from "@/components/PasswordResetForm";
+import PasswordResetAction from "@/components/PasswordResetAction";
 import RegistrationForm, { type RegistrationData } from "@/components/RegistrationForm";
 import Dashboard from "@/components/Dashboard";
 import Profile from "@/pages/Profile";
@@ -59,12 +62,14 @@ import OnboardingWizard from "@/components/OnboardingWizard";
 import GlobalSearch from "@/components/GlobalSearch";
 import NotFound from "@/pages/not-found";
 
-type AppState = 'landing' | 'category' | 'phone' | 'registration' | 'authenticated';
+type AppState = 'landing' | 'category' | 'email-login' | 'phone' | 'registration' | 'password-reset' | 'authenticated';
 type AuthMode = 'login' | 'register';
+type LoginMode = 'email' | 'phone';
 
 function Router() {
   const [appState, setAppState] = useState<AppState>('landing');
   const [authMode, setAuthMode] = useState<AuthMode>('register');
+  const [loginMode, setLoginMode] = useState<LoginMode>('email');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [idToken, setIdToken] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -73,23 +78,95 @@ function Router() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
+  const urlParams = new URLSearchParams(window.location.search);
+  const mode = urlParams.get('mode');
+  const oobCode = urlParams.get('oobCode');
+
+  if (mode === 'resetPassword' && oobCode) {
+    return <PasswordResetAction />;
+  }
+
   useEffect(() => {
-    const storedToken = localStorage.getItem('idToken');
-    const storedUser = localStorage.getItem('userData');
-    
-    if (storedToken && storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        setIdToken(storedToken);
-        setUserData(user);
-        setAppState('authenticated');
-      } catch (error) {
-        console.error('Error restoring auth state:', error);
-        localStorage.removeItem('idToken');
-        localStorage.removeItem('userData');
+    const restoreSession = async () => {
+      const storedToken = localStorage.getItem('idToken');
+      const storedUser = localStorage.getItem('userData');
+      
+      if (storedToken && storedUser) {
+        try {
+          const user = JSON.parse(storedUser);
+          
+          // Verify user still exists in database
+          const response = await fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ idToken: storedToken }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            
+            if (data.userExists && data.user) {
+              // User exists in DB - restore session with fresh data
+              setIdToken(storedToken);
+              setUserData(data.user);
+              setAppState('authenticated');
+              // Update localStorage with fresh data from DB
+              localStorage.setItem('userData', JSON.stringify(data.user));
+            } else {
+              // User deleted from DB or doesn't exist
+              console.warn('User account no longer exists in database');
+              localStorage.removeItem('idToken');
+              localStorage.removeItem('userData');
+              toast({
+                title: "Account Not Found",
+                description: "Your account is no longer active. Please contact support if this is an error.",
+                variant: "destructive",
+              });
+            }
+          } else if (response.status === 403) {
+            // Account suspended
+            const errorData = await response.json();
+            console.warn('Account suspended:', errorData.details);
+            localStorage.removeItem('idToken');
+            localStorage.removeItem('userData');
+            toast({
+              title: "Account Suspended",
+              description: errorData.details || "Your account has been suspended. Please contact support.",
+              variant: "destructive",
+              duration: 10000,
+            });
+          } else if (response.status === 401) {
+            // Force logout or token invalid
+            const errorData = await response.json().catch(() => ({}));
+            console.warn('Session invalidated:', errorData.details || 'Token expired');
+            localStorage.removeItem('idToken');
+            localStorage.removeItem('userData');
+            if (errorData.forceLogout) {
+              toast({
+                title: "Security Notice",
+                description: errorData.details || "Please log in again for security reasons.",
+                variant: "default",
+                duration: 8000,
+              });
+            }
+          } else {
+            // Token invalid or verification failed
+            console.warn('Token verification failed');
+            localStorage.removeItem('idToken');
+            localStorage.removeItem('userData');
+          }
+        } catch (error) {
+          console.error('Error restoring auth state:', error);
+          localStorage.removeItem('idToken');
+          localStorage.removeItem('userData');
+        }
       }
-    }
-    setLoading(false);
+      setLoading(false);
+    };
+
+    restoreSession();
   }, []);
 
   useEffect(() => {
@@ -131,13 +208,75 @@ function Router() {
     };
   }, [appState, toast, setLocation]);
 
-  const handleGetStarted = (mode: AuthMode) => {
+  const handleGetStarted = (mode: AuthMode, preferredLoginMode: LoginMode = 'email') => {
     setAuthMode(mode);
-    // Skip category selection for login - go straight to phone verification
+    setLoginMode(preferredLoginMode);
+    
     if (mode === 'login') {
-      setAppState('phone');
+      if (preferredLoginMode === 'email') {
+        setAppState('email-login');
+      } else {
+        setAppState('phone');
+      }
     } else {
       setAppState('category');
+    }
+  };
+
+  const handleEmailLoginSuccess = async (token: string) => {
+    setLoading(true);
+    setIdToken(token);
+
+    try {
+      const response = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ idToken: token }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Verification failed');
+      }
+
+      const data = await response.json();
+      
+      if (data.userExists && data.user) {
+        setUserData(data.user);
+        setIdToken(token);
+        setAppState('authenticated');
+        localStorage.setItem('idToken', token);
+        localStorage.setItem('userData', JSON.stringify(data.user));
+        setLocation('/dashboard');
+        toast({
+          title: "Welcome back!",
+          description: `Logged in as ${data.user.fullName}`,
+        });
+      } else {
+        // User authenticated with Firebase but no database record exists
+        // For Option 1: Registration requires phone OTP first
+        toast({
+          title: "Registration Required",
+          description: "Please register using phone OTP to create your account. You can use this email during registration.",
+          variant: "default",
+          duration: 6000,
+        });
+        // Clear any stored tokens and go back to landing
+        localStorage.removeItem('idToken');
+        localStorage.removeItem('userData');
+        setAppState('landing');
+      }
+    } catch (error: any) {
+      console.error('Auth verification error:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Authentication failed",
+        variant: "destructive",
+      });
+      setAppState('landing');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -168,16 +307,27 @@ function Router() {
       
       if (data.userExists && data.user) {
         // User exists in database
-        setUserData(data.user);
-        setIdToken(token);
-        setAppState('authenticated');
-        localStorage.setItem('idToken', token);
-        localStorage.setItem('userData', JSON.stringify(data.user));
-        setLocation('/dashboard');
-        toast({
-          title: "Welcome back!",
-          description: `Logged in as ${data.user.fullName}`,
-        });
+        if (authMode === 'login' && loginMode === 'phone') {
+          // User is resetting password via phone OTP - show password reset form
+          setUserData(data.user);
+          setAppState('password-reset');
+          toast({
+            title: "Phone Verified!",
+            description: "Now set your new password to complete the reset",
+          });
+        } else {
+          // Normal login flow
+          setUserData(data.user);
+          setIdToken(token);
+          setAppState('authenticated');
+          localStorage.setItem('idToken', token);
+          localStorage.setItem('userData', JSON.stringify(data.user));
+          setLocation('/dashboard');
+          toast({
+            title: "Welcome back!",
+            description: `Logged in as ${data.user.fullName}`,
+          });
+        }
       } else {
         // User doesn't exist in database
         if (authMode === 'login') {
@@ -206,16 +356,74 @@ function Router() {
     }
   };
 
-  const handleRegistrationComplete = async (data: RegistrationData) => {
+  const handlePasswordResetComplete = async (newPassword: string) => {
     setLoading(true);
     try {
+      const { EmailPasswordAuthService } = await import('@/lib/firebase');
+      const emailPasswordService = new EmailPasswordAuthService();
+      
+      // Update password in Firebase
+      await emailPasswordService.updateUserPassword(newPassword);
+      
+      // Sign in with the new password to get a fresh token
+      if (userData && userData.email) {
+        const freshToken = await emailPasswordService.signInWithEmail(userData.email, newPassword);
+        setIdToken(freshToken);
+        setAppState('authenticated');
+        localStorage.setItem('idToken', freshToken);
+        localStorage.setItem('userData', JSON.stringify(userData));
+        setLocation('/dashboard');
+        
+        toast({
+          title: "Password Reset Successful! 🎉",
+          description: "You can now login with your new password.",
+          duration: 5000,
+        });
+      }
+    } catch (error: any) {
+      console.error('Password reset error:', error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegistrationComplete = async (data: RegistrationData) => {
+    setLoading(true);
+    let tokenToUse = idToken;
+    
+    try {
+      if (data.email && data.password) {
+        const { EmailPasswordAuthService } = await import('@/lib/firebase');
+        const emailPasswordService = new EmailPasswordAuthService();
+        
+        try {
+          await emailPasswordService.linkEmailPassword(data.email, data.password);
+          const freshToken = await emailPasswordService.signInWithEmail(data.email, data.password);
+          tokenToUse = freshToken;
+          setIdToken(freshToken);
+          
+          toast({
+            title: "Email/Password Linked!",
+            description: "You can now login with email and password anytime.",
+          });
+        } catch (linkError: any) {
+          console.error('Error linking email/password:', linkError);
+          toast({
+            title: "Warning",
+            description: "Email/password linking failed. You can still use phone login.",
+            variant: "destructive",
+          });
+        }
+      }
+
       const response = await fetch('/api/users/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          idToken,
+          idToken: tokenToUse,
           ...data,
         }),
       });
@@ -228,7 +436,7 @@ function Router() {
       const user = await response.json();
       setUserData(user);
       setAppState('authenticated');
-      localStorage.setItem('idToken', idToken);
+      localStorage.setItem('idToken', tokenToUse);
       localStorage.setItem('userData', JSON.stringify(user));
       setLocation('/dashboard');
       
@@ -259,13 +467,31 @@ function Router() {
     );
   }
 
-  if (appState === 'landing' || appState === 'category' || appState === 'phone' || appState === 'registration') {
+  if (appState === 'landing' || appState === 'category' || appState === 'email-login' || appState === 'phone' || appState === 'registration' || appState === 'password-reset') {
     return (
       <Switch>
         <Route path="/">
           {appState === 'landing' && <LandingPage onGetStarted={handleGetStarted} />}
           {appState === 'category' && <CategorySelector onContinue={handleCategorySelected} />}
+          {appState === 'email-login' && (
+            <EmailPasswordLogin 
+              onLoginSuccess={handleEmailLoginSuccess}
+              onBackToLanding={() => setAppState('landing')}
+              onSwitchToPhoneLogin={() => {
+                setAuthMode('login');
+                setLoginMode('phone');
+                setAppState('phone');
+              }}
+            />
+          )}
           {appState === 'phone' && <PhoneVerification onVerified={handlePhoneVerified} />}
+          {appState === 'password-reset' && (
+            <PasswordResetForm
+              phoneNumber={phoneNumber}
+              onPasswordReset={handlePasswordResetComplete}
+              onCancel={() => setAppState('landing')}
+            />
+          )}
           {appState === 'registration' && (
             <RegistrationForm 
               phoneNumber={phoneNumber} 

@@ -32,12 +32,15 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         },
       });
       if (!response.ok) {
-        throw new Error('Unauthorized');
+        return { isAdmin: false };
       }
       return response.json();
     },
     enabled: !!idToken,
     retry: false,
+    meta: {
+      errorHandler: 'none', // Silent check - no error toasts for non-admin users
+    },
   });
 
   useEffect(() => {

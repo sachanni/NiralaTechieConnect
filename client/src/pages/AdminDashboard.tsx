@@ -13,14 +13,18 @@ export default function AdminDashboard() {
   const { data: isAdminData } = useQuery({
     queryKey: ['/api/admin/check'],
     queryFn: async () => {
-      if (!idToken) throw new Error('Not authenticated');
+      if (!idToken) return { isAdmin: false };
       const res = await fetch('/api/admin/check', {
         headers: { 'Authorization': `Bearer ${idToken}` }
       });
-      if (!res.ok) throw new Error('Failed to check admin status');
+      if (!res.ok) return { isAdmin: false };
       return res.json();
     },
     enabled: !!idToken,
+    retry: false,
+    meta: {
+      errorHandler: 'none', // Silent check - no error toasts
+    },
   });
 
   const { data: analytics, isLoading } = useQuery({

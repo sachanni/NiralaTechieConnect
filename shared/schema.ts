@@ -46,6 +46,13 @@ export const users = pgTable("users", {
   showEmail: integer("show_email").notNull().default(0),
   showPhone: integer("show_phone").notNull().default(0),
   notificationPreferences: text("notification_preferences").notNull().default('{"jobs":true,"messages":true,"skillSwap":true,"ideas":true,"events":true,"forum":true}'),
+  isSuspended: integer("is_suspended").notNull().default(0),
+  suspensionReason: text("suspension_reason"),
+  suspendedAt: timestamp("suspended_at"),
+  suspendedBy: varchar("suspended_by").references(() => users.id),
+  forceLogoutAfter: timestamp("force_logout_after"),
+  passwordResetToken: varchar("password_reset_token"),
+  passwordResetExpiry: timestamp("password_reset_expiry"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -64,6 +71,13 @@ export const insertUserSchema = createInsertSchema(users).omit({
   showEmail: true,
   showPhone: true,
   notificationPreferences: true,
+  isSuspended: true,
+  suspensionReason: true,
+  suspendedAt: true,
+  suspendedBy: true,
+  forceLogoutAfter: true,
+  passwordResetToken: true,
+  passwordResetExpiry: true,
   createdAt: true,
 });
 

@@ -3,9 +3,11 @@ import express from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
-import { getPhoneNumberFromToken, verifyIdToken } from "./firebase-admin";
+import { getPhoneNumberFromToken, getUserIdentifierFromToken, verifyIdToken } from "./firebase-admin";
 import { insertUserSchema, insertMessageSchema } from "@shared/schema";
 import { createRazorpayOrder, verifyRazorpaySignature, getRazorpayKeyId } from "./razorpay";
+import { sendPasswordResetEmail, sendWelcomeEmail } from "./lib/sendgrid";
+import { setPasswordResetToken, getUserByPasswordResetToken, clearPasswordResetToken } from "./storage-methods";
 import multer from "multer";
 import path from "path";
 import { promises as fs } from "fs";
@@ -311,6 +313,156 @@ async function authorizeAdmin(req: AuthRequest, res: Response, next: NextFunctio
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  app.post("/api/auth/send-password-reset", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: "Email required" });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.json({ message: "If an account exists with this email, you will receive a password reset link." });
+      }
+
+      const resetToken = randomUUID();
+      const resetExpiry = new Date(Date.now() + 3600000);
+
+      await setPasswordResetToken(user.id, resetToken, resetExpiry);
+
+      // Use configurable APP_URL (for any server), fallback to REPLIT_DEV_DOMAIN, then localhost
+      const baseUrl = process.env.APP_URL 
+        || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null)
+        || 'http://localhost:5000';
+      const resetLink = `${baseUrl}/?mode=resetPassword&oobCode=${resetToken}`;
+      
+      await sendPasswordResetEmail(email, resetLink);
+      
+      console.log('[Password Reset] Reset email sent to:', email);
+      return res.json({ message: "If an account exists with this email, you will receive a password reset link." });
+    } catch (error: any) {
+      console.error('[Password Reset] Error:', error);
+      return res.status(500).json({ error: "Failed to send password reset email" });
+    }
+  });
+
+  app.post("/api/auth/verify-reset-token", async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ error: "Token required" });
+      }
+
+      const user = await getUserByPasswordResetToken(token);
+      if (!user) {
+        return res.status(400).json({ error: "Invalid or expired reset token" });
+      }
+
+      if (!user.passwordResetExpiry || new Date(user.passwordResetExpiry) < new Date()) {
+        await clearPasswordResetToken(user.id);
+        return res.status(400).json({ error: "Reset token has expired" });
+      }
+
+      return res.json({ 
+        email: user.email,
+        valid: true
+      });
+    } catch (error: any) {
+      console.error('[Verify Reset Token] Error:', error);
+      return res.status(500).json({ error: "Failed to verify reset token" });
+    }
+  });
+
+  app.post("/api/auth/confirm-password-reset", async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+      
+      if (!token || !newPassword) {
+        return res.status(400).json({ error: "Token and new password required" });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters long" });
+      }
+
+      const user = await getUserByPasswordResetToken(token);
+      if (!user) {
+        return res.status(400).json({ error: "Invalid or expired reset token" });
+      }
+
+      if (!user.passwordResetExpiry || new Date(user.passwordResetExpiry) < new Date()) {
+        await clearPasswordResetToken(user.id);
+        return res.status(400).json({ error: "Reset token has expired" });
+      }
+
+      console.log('[Password Reset] Attempting to reset password for user:', {
+        userId: user.id,
+        email: user.email,
+        phoneNumber: user.phoneNumber
+      });
+
+      if (!user.email) {
+        return res.status(400).json({ 
+          error: "Email is required for password reset" 
+        });
+      }
+
+      const admin = await import('./firebase-admin');
+      
+      // Look up Firebase user by EMAIL (not database ID, in case of UID mismatch)
+      let firebaseUid: string;
+      try {
+        const firebaseUser = await admin.auth.getUserByEmail(user.email);
+        firebaseUid = firebaseUser.uid;
+        console.log('[Password Reset] Found Firebase user by email:', {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          phoneNumber: firebaseUser.phoneNumber,
+          providers: firebaseUser.providerData.map(p => p.providerId)
+        });
+      } catch (lookupError: any) {
+        if (lookupError.code === 'auth/user-not-found') {
+          // User doesn't exist in Firebase - create them
+          console.log('[Password Reset] Firebase user not found by email, creating new account');
+          try {
+            const newFirebaseUser = await admin.auth.createUser({
+              email: user.email,
+              password: newPassword,
+              emailVerified: true,
+              phoneNumber: user.phoneNumber || undefined,
+              displayName: user.fullName || undefined
+            });
+            firebaseUid = newFirebaseUser.uid;
+            console.log('[Password Reset] Created new Firebase user:', newFirebaseUser.uid);
+            
+            // Update database with correct Firebase UID
+            await storage.updateUser(user.id, { id: firebaseUid });
+          } catch (createError: any) {
+            console.error('[Password Reset] Failed to create Firebase user:', createError);
+            return res.status(500).json({ 
+              error: "Failed to create authentication account" 
+            });
+          }
+        } else {
+          throw lookupError;
+        }
+      }
+      
+      // Update password for the Firebase user
+      await admin.updateUserPassword(firebaseUid, newPassword, user.email);
+      
+      await clearPasswordResetToken(user.id);
+      
+      console.log('[Password Reset] Password successfully reset for:', user.email);
+      return res.json({ message: "Password successfully reset" });
+    } catch (error: any) {
+      console.error('[Confirm Password Reset] Error:', error);
+      return res.status(500).json({ error: "Failed to reset password" });
+    }
+  });
+
   app.post("/api/auth/verify", async (req, res) => {
     try {
       const { idToken } = req.body;
@@ -319,14 +471,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "ID token required" });
       }
 
-      const phoneNumber = await getPhoneNumberFromToken(idToken);
+      const identifier = await getUserIdentifierFromToken(idToken);
+      let existingUser;
       
-      const existingUser = await storage.getUserByPhone(phoneNumber);
+      if (identifier.type === 'phone') {
+        existingUser = await storage.getUserByPhone(identifier.value);
+      } else {
+        existingUser = await storage.getUserByEmail(identifier.value);
+      }
+      
+      if (!existingUser) {
+        return res.json({
+          phoneNumber: identifier.type === 'phone' ? identifier.value : undefined,
+          email: identifier.type === 'email' ? identifier.value : undefined,
+          userExists: false,
+          user: null,
+        });
+      }
+
+      // Check if user is suspended
+      if (existingUser.isSuspended) {
+        return res.status(403).json({ 
+          error: "Account suspended",
+          details: existingUser.suspensionReason || "Your account has been suspended. Please contact support.",
+          suspended: true
+        });
+      }
+
+      // Check if force logout is required
+      if (existingUser.forceLogoutAfter) {
+        const forceLogoutTime = new Date(existingUser.forceLogoutAfter).getTime();
+        const now = Date.now();
+        
+        if (now < forceLogoutTime) {
+          // Force logout period is active
+          return res.status(401).json({ 
+            error: "Session invalidated",
+            details: "Please log in again for security reasons.",
+            forceLogout: true
+          });
+        }
+      }
       
       return res.json({
-        phoneNumber,
-        userExists: !!existingUser,
-        user: existingUser || null,
+        phoneNumber: identifier.type === 'phone' ? identifier.value : undefined,
+        email: identifier.type === 'email' ? identifier.value : undefined,
+        userExists: true,
+        user: existingUser,
       });
     } catch (error: any) {
       console.error('Auth verification error:', error);
@@ -339,6 +530,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { idToken, ...userData } = req.body;
       
       if (!idToken) {
+        console.error('[Registration] ID token missing in request');
         return res.status(400).json({ error: "ID token required" });
       }
 
@@ -347,12 +539,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = decodedToken.uid;
       
       if (!phoneNumber) {
+        console.error('[Registration] Phone number not found in decoded token:', {
+          uid: userId,
+          hasEmail: !!decodedToken.email,
+          hasPhone: !!decodedToken.phone_number
+        });
         return res.status(400).json({ error: "Phone number not found in token" });
       }
       
       const existingUser = await storage.getUserByPhone(phoneNumber);
       if (existingUser) {
-        return res.status(400).json({ error: "User already exists" });
+        console.error('[Registration] User already exists with phone:', phoneNumber);
+        return res.status(400).json({ error: "User already exists with this phone number" });
+      }
+
+      // Check if email already exists
+      if (userData.email) {
+        const existingEmailUser = await storage.getUserByEmail(userData.email);
+        if (existingEmailUser) {
+          console.error('[Registration] User already exists with email:', userData.email);
+          return res.status(400).json({ 
+            error: "This email is already registered. Please use a different email or try logging in." 
+          });
+        }
       }
 
       const validatedData = insertUserSchema.parse({
@@ -369,12 +578,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const updatedUser = await storage.updateUserPointsAndBadges(user.id, points, badges);
       
+      // Send welcome email
+      if (updatedUser.email) {
+        try {
+          await sendWelcomeEmail(updatedUser.email, updatedUser.fullName || 'Techie');
+          console.log('[Registration] Welcome email sent to:', updatedUser.email);
+        } catch (emailError) {
+          console.error('[Registration] Failed to send welcome email:', emailError);
+        }
+      }
+      
+      console.log('[Registration] User registered successfully:', updatedUser.email);
       return res.status(201).json(updatedUser);
     } catch (error: any) {
+      console.error('[Registration] Error:', {
+        message: error.message,
+        code: error.code,
+        name: error.name,
+        stack: error.stack?.split('\n').slice(0, 3)
+      });
+      
       if (error.message === 'Invalid token') {
         return res.status(401).json({ error: "Unauthorized" });
       }
-      return res.status(400).json({ error: "Registration failed" });
+      
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          error: "Invalid data format", 
+          details: error.issues?.map((i: any) => `${i.path.join('.')}: ${i.message}`).join(', ')
+        });
+      }
+      
+      // Handle database unique constraint violations
+      if (error.code === '23505') {
+        if (error.message?.includes('users_email_unique')) {
+          return res.status(400).json({ 
+            error: "This email is already registered. Please use a different email or try logging in."
+          });
+        }
+        if (error.message?.includes('users_phone')) {
+          return res.status(400).json({ 
+            error: "This phone number is already registered. Please try logging in instead."
+          });
+        }
+        return res.status(400).json({ 
+          error: "This account information is already registered. Please try logging in."
+        });
+      }
+      
+      return res.status(400).json({ 
+        error: "Registration failed",
+        details: error.message 
+      });
     }
   });
 
@@ -1882,6 +2137,133 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Admin check error:', error);
       return res.status(500).json({ error: "Failed to check admin status" });
+    }
+  });
+
+  // Suspend user account
+  app.post("/api/admin/users/:userId/suspend", authenticateUser, authorizeAdmin, async (req: AuthRequest, res) => {
+    try {
+      const { userId } = req.params;
+      const { reason } = req.body;
+
+      if (!reason) {
+        return res.status(400).json({ error: "Suspension reason is required" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.isAdmin) {
+        return res.status(400).json({ error: "Cannot suspend admin accounts" });
+      }
+
+      await storage.db.update(storage.users)
+        .set({
+          isSuspended: 1,
+          suspensionReason: reason,
+          suspendedAt: new Date(),
+          suspendedBy: req.userId,
+        })
+        .where(storage.eq(storage.users.id, userId));
+
+      return res.json({ 
+        success: true,
+        message: `User ${user.fullName} has been suspended` 
+      });
+    } catch (error: any) {
+      console.error('Suspend user error:', error);
+      return res.status(500).json({ error: "Failed to suspend user" });
+    }
+  });
+
+  // Unsuspend user account
+  app.post("/api/admin/users/:userId/unsuspend", authenticateUser, authorizeAdmin, async (req: AuthRequest, res) => {
+    try {
+      const { userId} = req.params;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      await storage.db.update(storage.users)
+        .set({
+          isSuspended: 0,
+          suspensionReason: null,
+          suspendedAt: null,
+          suspendedBy: null,
+        })
+        .where(storage.eq(storage.users.id, userId));
+
+      return res.json({ 
+        success: true,
+        message: `User ${user.fullName} has been unsuspended` 
+      });
+    } catch (error: any) {
+      console.error('Unsuspend user error:', error);
+      return res.status(500).json({ error: "Failed to unsuspend user" });
+    }
+  });
+
+  // Force logout user (invalidate all sessions)
+  app.post("/api/admin/users/:userId/force-logout", authenticateUser, authorizeAdmin, async (req: AuthRequest, res) => {
+    try {
+      const { userId } = req.params;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (user.isAdmin) {
+        return res.status(400).json({ error: "Cannot force logout admin accounts" });
+      }
+
+      // Set force logout time to 24 hours from now
+      const forceLogoutTime = new Date();
+      forceLogoutTime.setHours(forceLogoutTime.getHours() + 24);
+
+      await storage.db.update(storage.users)
+        .set({
+          forceLogoutAfter: forceLogoutTime,
+        })
+        .where(storage.eq(storage.users.id, userId));
+
+      return res.json({ 
+        success: true,
+        message: `User ${user.fullName} will be forced to logout for the next 24 hours` 
+      });
+    } catch (error: any) {
+      console.error('Force logout error:', error);
+      return res.status(500).json({ error: "Failed to force logout user" });
+    }
+  });
+
+  // Clear force logout
+  app.post("/api/admin/users/:userId/clear-force-logout", authenticateUser, authorizeAdmin, async (req: AuthRequest, res) => {
+    try {
+      const { userId } = req.params;
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      await storage.db.update(storage.users)
+        .set({
+          forceLogoutAfter: null,
+        })
+        .where(storage.eq(storage.users.id, userId));
+
+      return res.json({ 
+        success: true,
+        message: `Force logout cleared for ${user.fullName}` 
+      });
+    } catch (error: any) {
+      console.error('Clear force logout error:', error);
+      return res.status(500).json({ error: "Failed to clear force logout" });
     }
   });
 

@@ -26,6 +26,7 @@ export interface RegistrationData {
   fullName: string;
   flatNumber: string;
   email: string;
+  password?: string;
   occupation: string;
   employmentStatus: string;
   briefIntro?: string;
@@ -60,6 +61,7 @@ export default function RegistrationForm({ phoneNumber, idToken, selectedCategor
     fullName: '',
     flatNumber: '',
     email: '',
+    password: '',
     occupation: '',
     employmentStatus: '',
     briefIntro: '',
@@ -86,7 +88,7 @@ export default function RegistrationForm({ phoneNumber, idToken, selectedCategor
   const canProceed = () => {
     switch (currentStep) {
       case 1:
-        return formData.fullName && formData.flatNumber && formData.email;
+        return formData.fullName && formData.flatNumber && formData.email && formData.password && formData.password.length >= 6;
       case 2:
         const hasRoles = Object.values(formData.categoryRoles || {}).some(roles => roles.length > 0);
         return hasRoles;
@@ -281,6 +283,22 @@ export default function RegistrationForm({ phoneNumber, idToken, selectedCategor
                     className="h-12"
                     data-testid="input-email"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => updateField('password', e.target.value)}
+                    placeholder="Create a secure password"
+                    className="h-12"
+                    data-testid="input-password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Use this email and password for all future logins
+                  </p>
                 </div>
               </>
             )}
