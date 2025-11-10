@@ -637,6 +637,10 @@ function Router() {
           <Route path="/lost-and-found">
             <LostAndFoundPage idToken={idToken} />
           </Route>
+          {/* Redirect for backwards compatibility */}
+          <Route path="/lost-found">
+            <LostAndFoundPage idToken={idToken} />
+          </Route>
           <Route path="/announcements">
             <CommunityAnnouncementsPage idToken={idToken} />
           </Route>

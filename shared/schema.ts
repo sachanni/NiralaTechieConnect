@@ -385,6 +385,7 @@ export const events = pgTable("events", {
   organizerId: varchar("organizer_id").notNull().references(() => users.id),
   maxAttendees: integer("max_attendees").notNull(),
   imageUrl: text("image_url"),
+  eventType: text("event_type").notNull().default('community'),
   status: text("status").notNull().default('upcoming'),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

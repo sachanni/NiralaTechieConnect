@@ -28,6 +28,7 @@ interface Event {
   organizerId: string;
   maxAttendees: number;
   imageUrl?: string | null;
+  eventType?: string;
   status: string;
   createdAt: string;
   organizer: User;
@@ -35,7 +36,8 @@ interface Event {
   checkinCount: number;
 }
 
-type EventType = "upcoming" | "past";
+type EventTimeType = "upcoming" | "past";
+type EventCategoryType = "all" | "it_meetup" | "community";
 
 interface EventsProps {
   userId?: string;
@@ -43,14 +45,18 @@ interface EventsProps {
 }
 
 export default function Events({ userId, idToken }: EventsProps = {}) {
-  const [eventType, setEventType] = useState<EventType>("upcoming");
+  const [eventTimeType, setEventTimeType] = useState<EventTimeType>("upcoming");
+  const [eventCategory, setEventCategory] = useState<EventCategoryType>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
 
-  const endpoint = eventType === "upcoming" ? "/api/events" : "/api/events/past";
+  const baseEndpoint = eventTimeType === "upcoming" ? "/api/events" : "/api/events/past";
+  const endpoint = eventCategory !== "all" 
+    ? `${baseEndpoint}?eventType=${eventCategory}` 
+    : baseEndpoint;
 
   const { data, isLoading, error } = useQuery<{ events: Event[] }>({
-    queryKey: [endpoint],
+    queryKey: [baseEndpoint, eventCategory],
     queryFn: async () => {
       const response = await fetch(endpoint);
       if (!response.ok) throw new Error('Failed to fetch events');
@@ -124,27 +130,37 @@ export default function Events({ userId, idToken }: EventsProps = {}) {
             Join tech meetups and networking events in your community
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-            <Tabs value={eventType} onValueChange={(value) => setEventType(value as EventType)} className="w-auto">
-              <TabsList>
-                <TabsTrigger value="upcoming" className="gap-1.5">
-                  <Calendar className="w-4 h-4" />
-                  Upcoming Events
-                </TabsTrigger>
-                <TabsTrigger value="past" className="gap-1.5">
-                  <Clock className="w-4 h-4" />
-                  Past Events
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <Tabs value={eventCategory} onValueChange={(value) => setEventCategory(value as EventCategoryType)} className="w-auto">
+                <TabsList>
+                  <TabsTrigger value="all">All Events</TabsTrigger>
+                  <TabsTrigger value="it_meetup">IT Meetups</TabsTrigger>
+                  <TabsTrigger value="community">Community Events</TabsTrigger>
+                </TabsList>
+              </Tabs>
 
-            <div className="relative flex-1 max-w-md w-full">
-              <Input
-                placeholder="Search events, locations, or organizers..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full"
-              />
+              <Tabs value={eventTimeType} onValueChange={(value) => setEventTimeType(value as EventTimeType)} className="w-auto">
+                <TabsList>
+                  <TabsTrigger value="upcoming" className="gap-1.5">
+                    <Calendar className="w-4 h-4" />
+                    Upcoming
+                  </TabsTrigger>
+                  <TabsTrigger value="past" className="gap-1.5">
+                    <Clock className="w-4 h-4" />
+                    Past
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              <div className="relative flex-1 max-w-md w-full">
+                <Input
+                  placeholder="Search events, locations, or organizers..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -172,7 +188,7 @@ export default function Events({ userId, idToken }: EventsProps = {}) {
           <div className="text-center py-12">
             <CalendarDays className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold mb-2">
-              {searchQuery ? 'No matching events found' : `No ${eventType} events`}
+              {searchQuery ? 'No matching events found' : `No ${eventTimeType} events`}
             </h3>
             <p className="text-muted-foreground mb-4">
               {searchQuery 

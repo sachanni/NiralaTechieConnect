@@ -119,7 +119,7 @@ export interface IStorage {
   getAdminActions(filters?: { adminId?: string; actionType?: string; startDate?: Date; endDate?: Date }): Promise<Array<AdminAction & { admin: User }>>;
   
   createEvent(event: InsertEvent): Promise<Event>;
-  getEvents(filters?: { status?: string; organizerId?: string }): Promise<Array<Event & { organizer: User; rsvpCount: number; checkinCount: number }>>;
+  getEvents(filters?: { status?: string; organizerId?: string; eventType?: string }): Promise<Array<Event & { organizer: User; rsvpCount: number; checkinCount: number }>>;
   getEvent(id: string): Promise<(Event & { organizer: User; rsvpCount: number; checkinCount: number }) | undefined>;
   getUpcomingEvents(): Promise<Array<Event & { organizer: User; rsvpCount: number; checkinCount: number }>>;
   getPastEvents(): Promise<Array<Event & { organizer: User; rsvpCount: number; checkinCount: number }>>;
@@ -3159,7 +3159,7 @@ export class PostgresStorage implements IStorage {
     return result[0];
   }
 
-  async getEvents(filters?: { status?: string; organizerId?: string }): Promise<Array<Event & { organizer: User; rsvpCount: number; checkinCount: number }>> {
+  async getEvents(filters?: { status?: string; organizerId?: string; eventType?: string }): Promise<Array<Event & { organizer: User; rsvpCount: number; checkinCount: number }>> {
     let query = db
       .select({
         event: events,
@@ -3181,6 +3181,9 @@ export class PostgresStorage implements IStorage {
     }
     if (filters?.organizerId) {
       conditions.push(eq(events.organizerId, filters.organizerId));
+    }
+    if (filters?.eventType) {
+      conditions.push(eq(events.eventType, filters.eventType));
     }
 
     if (conditions.length > 0) {

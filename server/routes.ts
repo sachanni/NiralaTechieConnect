@@ -2567,7 +2567,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/events", async (req, res) => {
     try {
-      const events = await storage.getUpcomingEvents();
+      const { eventType } = req.query;
+      let events;
+      
+      if (eventType && (eventType === 'it_meetup' || eventType === 'community')) {
+        events = await storage.getEvents({ 
+          status: 'upcoming', 
+          eventType: eventType as string 
+        });
+        events = events.filter(e => {
+          const eventDateTime = new Date(`${e.eventDate.toISOString().split('T')[0]}T${e.eventTime}`);
+          return eventDateTime > new Date();
+        });
+      } else {
+        events = await storage.getUpcomingEvents();
+      }
+      
       return res.json({ events });
     } catch (error: any) {
       console.error('Get upcoming events error:', error);
@@ -2577,7 +2592,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/events/past", async (req, res) => {
     try {
-      const events = await storage.getPastEvents();
+      const { eventType } = req.query;
+      let events;
+      
+      if (eventType && (eventType === 'it_meetup' || eventType === 'community')) {
+        events = await storage.getEvents({ 
+          status: 'completed', 
+          eventType: eventType as string 
+        });
+        const allStatusEvents = await storage.getEvents({ 
+          eventType: eventType as string 
+        });
+        const pastByTime = allStatusEvents.filter(e => {
+          const eventDateTime = new Date(`${e.eventDate.toISOString().split('T')[0]}T${e.eventTime}`);
+          return eventDateTime <= new Date();
+        });
+        events = [...events, ...pastByTime.filter(e => e.status !== 'completed')];
+      } else {
+        events = await storage.getPastEvents();
+      }
+      
       return res.json({ events });
     } catch (error: any) {
       console.error('Get past events error:', error);

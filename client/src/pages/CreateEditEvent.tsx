@@ -35,6 +35,9 @@ import { cn } from "@/lib/utils";
 const eventFormSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
   description: z.string().min(50, "Description must be at least 50 characters"),
+  eventType: z.enum(["it_meetup", "community"], {
+    required_error: "Please select an event type",
+  }),
   eventDate: z.date({
     required_error: "Please select a date for the event",
   }).refine((date) => date > new Date(), {
@@ -55,6 +58,7 @@ interface Event {
   id: string;
   title: string;
   description: string;
+  eventType?: string;
   location: string;
   eventDate: string;
   eventTime: string;
@@ -92,6 +96,7 @@ export default function CreateEditEvent({ userId, idToken }: CreateEditEventProp
     defaultValues: {
       title: "",
       description: "",
+      eventType: "community",
       eventDate: undefined,
       eventTime: "",
       location: "",
@@ -134,6 +139,7 @@ export default function CreateEditEvent({ userId, idToken }: CreateEditEventProp
       form.reset({
         title: eventData.title,
         description: eventData.description,
+        eventType: (eventData.eventType as "it_meetup" | "community") || "community",
         eventDate: new Date(eventData.eventDate),
         eventTime: eventData.eventTime,
         location: eventData.location,
@@ -359,6 +365,31 @@ export default function CreateEditEvent({ userId, idToken }: CreateEditEventProp
                             )}>
                               {descriptionLength} / 50 characters
                             </span>
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="eventType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Event Type *</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select event type" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="it_meetup">IT Meetup (Tech workshops, coding sessions, developer networking)</SelectItem>
+                              <SelectItem value="community">Community Event (Festivals, celebrations, social gatherings)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            Choose whether this is a professional IT event or a community celebration
                           </FormDescription>
                           <FormMessage />
                         </FormItem>

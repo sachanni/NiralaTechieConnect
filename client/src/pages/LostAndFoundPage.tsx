@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Search, Plus, MapPin, Phone, Mail, CheckCircle2 } from 'lucide-react';
+import { Search, Plus, MapPin, Phone, Mail, CheckCircle2, ArrowLeft } from 'lucide-react';
 import type { LostAndFound } from '@db/schema';
 
 const ITEM_CATEGORIES = [
@@ -48,6 +49,7 @@ export default function LostAndFoundPage({ idToken }: LostAndFoundPageProps) {
   const [activeTab, setActiveTab] = useState<'lost' | 'found'>('lost');
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const { data: items = [] } = useQuery<LostAndFound[]>({
     queryKey: ['/api/lost-and-found'],
@@ -138,8 +140,16 @@ export default function LostAndFoundPage({ idToken }: LostAndFoundPageProps) {
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-6">
       <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setLocation('/dashboard')}
+            className="shrink-0"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="flex-1">
             <h1 className="text-3xl font-bold tracking-tight">Lost & Found</h1>
             <p className="text-muted-foreground mt-1">
               Help your neighbors find their lost items
