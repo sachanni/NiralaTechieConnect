@@ -39,7 +39,7 @@ export default function LandingPage({ onGetStarted }: LandingPageProps) {
             </Button>
             <Button 
               size="lg" 
-              onClick={() => onGetStarted('register')}
+              onClick={() => onGetStarted('register', 'email')}
               className="h-12 sm:h-14 px-6 sm:px-8 text-sm sm:text-base font-semibold bg-primary hover-elevate active-elevate-2 border border-primary-border w-full sm:w-auto"
               data-testid="button-register"
             >

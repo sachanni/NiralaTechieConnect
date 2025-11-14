@@ -1,8 +1,9 @@
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useLocation } from 'wouter';
 import { motion } from 'framer-motion';
 import { SERVICE_CATEGORIES, COMMUNITY_FEATURES } from '../../../shared/serviceCategories';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Settings, ArrowRight } from 'lucide-react';
 
 export default function ServicesHub() {
   const [, setLocation] = useLocation();
@@ -22,6 +23,39 @@ export default function ServicesHub() {
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
             Connect with neighbors offering services or find help in your community
           </p>
+        </motion.div>
+
+        {/* Manage My Services Banner */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="mb-8"
+        >
+          <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+            <div className="p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
+                  <Settings className="w-6 h-6 text-white" />
+                </div>
+                <div className="text-center sm:text-left">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                    Manage Your Service Preferences
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    Let neighbors know which services you offer or need
+                  </p>
+                </div>
+              </div>
+              <Button 
+                onClick={() => setLocation('/my-services')}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Go to My Services
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </Card>
         </motion.div>
 
         {/* Service Categories Grid */}

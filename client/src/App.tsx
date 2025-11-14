@@ -14,9 +14,12 @@ import PasswordResetAction from "@/components/PasswordResetAction";
 import RegistrationForm, { type RegistrationData } from "@/components/RegistrationForm";
 import Dashboard from "@/components/Dashboard";
 import Profile from "@/pages/Profile";
+import MyServices from "@/pages/MyServices";
 import Settings from "@/pages/Settings";
 import FindTeammates from "@/pages/FindTeammates";
 import Chat from "@/pages/Chat";
+import Notifications from "@/pages/Notifications";
+import NotificationSettings from "@/pages/NotificationSettings";
 import JobBoard from "@/pages/JobBoard";
 import PostJob from "@/pages/PostJob";
 import MyJobs from "@/pages/MyJobs";
@@ -666,6 +669,9 @@ function Router() {
           <Route path="/profile">
             <Profile user={userData} userId={userData.id} idToken={idToken} />
           </Route>
+          <Route path="/my-services">
+            <MyServices userId={userData.id} idToken={idToken} />
+          </Route>
           <Route path="/settings">
             <Settings idToken={idToken} />
           </Route>
@@ -677,6 +683,12 @@ function Router() {
           </Route>
           <Route path="/chat">
             <Chat userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/notification-settings">
+            <NotificationSettings userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/notifications">
+            <Notifications userId={userData.id} idToken={idToken} />
           </Route>
           
           {/* Default route */}

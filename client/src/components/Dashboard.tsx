@@ -1,19 +1,27 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Rocket, Users, Briefcase, Lightbulb, CalendarDays, MessagesSquare, ArrowRight, TrendingUp, Shield, GraduationCap, Search, Megaphone, ShoppingCart, Wrench, Megaphone as AdvertiseIcon, UtensilsCrossed, Car, Gift, Baby, BookOpen, Heart, Sparkles, Activity as ActivityIcon, Camera } from "lucide-react";
-import { useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Rocket, Sparkles, TrendingUp, Menu, X, Home, Users, Briefcase, MessageCircle, Bell, User } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import confetti from 'canvas-confetti';
-import { formatDistanceToNow } from "date-fns";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 import AccountMenu from "./AccountMenu";
+import GlobalSearch from "./GlobalSearch";
+import HeaderNavItem from "./HeaderNavItem";
+import UserProfileSidebar from "./UserProfileSidebar";
+import SuggestionsSidebar from "./SuggestionsSidebar";
+import ActivityFeedItem from "./ActivityFeedItem";
+import NotificationDropdown from "./NotificationDropdown";
+import { Skeleton } from "./ui/skeleton";
 
 interface DashboardProps {
   user: {
     fullName: string;
     profilePhotoUrl?: string;
+    points?: number;
+    badges?: string[];
   };
   userId: string;
   idToken: string;
@@ -21,6 +29,18 @@ interface DashboardProps {
 
 export default function Dashboard({ user, userId, idToken }: DashboardProps) {
   const [, setLocation] = useLocation();
+  const [feedFilter, setFeedFilter] = useState("all");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const leftSidebarRef = useRef<HTMLDivElement>(null);
+  const rightSidebarRef = useRef<HTMLDivElement>(null);
+  const leftSidebarContainerRef = useRef<HTMLElement>(null);
+  const rightSidebarContainerRef = useRef<HTMLElement>(null);
+  const [leftSidebarShort, setLeftSidebarShort] = useState(false);
+  const [rightSidebarShort, setRightSidebarShort] = useState(false);
+  const [leftSidebarLeft, setLeftSidebarLeft] = useState(0);
+  const [rightSidebarRight, setRightSidebarRight] = useState(0);
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(0);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(0);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -31,6 +51,45 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
       });
     }, 300);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const checkSidebarHeights = () => {
+      const headerHeight = 88;
+      const availableHeight = window.innerHeight - headerHeight;
+
+      if (leftSidebarContainerRef.current) {
+        const containerRect = leftSidebarContainerRef.current.getBoundingClientRect();
+        setLeftSidebarLeft(containerRect.left);
+        setLeftSidebarWidth(containerRect.width);
+      }
+
+      if (rightSidebarRef.current && rightSidebarContainerRef.current) {
+        const rightHeight = rightSidebarRef.current.scrollHeight;
+        const isShort = rightHeight < availableHeight;
+        setRightSidebarShort(isShort);
+        
+        if (isShort) {
+          const containerRect = rightSidebarContainerRef.current.getBoundingClientRect();
+          setRightSidebarRight(window.innerWidth - containerRect.right);
+          setRightSidebarWidth(containerRect.width);
+        }
+      }
+    };
+
+    const timeoutId = setTimeout(checkSidebarHeights, 100);
+
+    const resizeObserver = new ResizeObserver(checkSidebarHeights);
+    if (leftSidebarContainerRef.current) resizeObserver.observe(leftSidebarContainerRef.current);
+    if (rightSidebarRef.current) resizeObserver.observe(rightSidebarRef.current);
+
+    window.addEventListener('resize', checkSidebarHeights);
+
+    return () => {
+      clearTimeout(timeoutId);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', checkSidebarHeights);
+    };
   }, []);
 
   const handleLogout = async () => {
@@ -48,11 +107,35 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
     }
   };
 
+  const { data: activityData, isLoading: activityLoading } = useQuery<{ activities: any[] }>({
+    queryKey: ['activity-feed', feedFilter],
+    queryFn: async () => {
+      const response = await fetch(`/api/activity-feed?limit=20`, {
+        headers: {
+          'Authorization': `Bearer ${idToken}`
+        }
+      });
+      if (!response.ok) return { activities: [] };
+      return response.json();
+    },
+    enabled: !!idToken,
+    refetchInterval: 30000,
+  });
+
   const { data: usersData } = useQuery<{ users: any[] }>({
     queryKey: ['users', userId],
     queryFn: async () => {
       const response = await fetch(`/api/users/search?excludeUserId=${userId}`);
       if (!response.ok) throw new Error('Failed to fetch users');
+      return response.json();
+    },
+  });
+
+  const { data: eventsData } = useQuery<{ events: any[] }>({
+    queryKey: ['upcoming-events'],
+    queryFn: async () => {
+      const response = await fetch('/api/events');
+      if (!response.ok) throw new Error('Failed to fetch events');
       return response.json();
     },
   });
@@ -64,123 +147,55 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
       if (!response.ok) throw new Error('Failed to fetch jobs');
       return response.json();
     },
-    refetchInterval: 10000,
   });
 
-  const { data: ideasData } = useQuery<{ ideas: any[] }>({
-    queryKey: ['recent-ideas'],
+  const { data: servicesData } = useQuery<{ services: any[] }>({
+    queryKey: ['user-services', userId],
     queryFn: async () => {
-      const response = await fetch('/api/ideas', {
+      const response = await fetch('/api/users/services', {
         headers: {
-          'Authorization': `Bearer ${idToken}`
-        }
+          'Authorization': `Bearer ${idToken}`,
+        },
       });
-      if (!response.ok) throw new Error('Failed to fetch ideas');
-      return response.json();
-    },
-    refetchInterval: 10000,
-  });
-
-  const { data: eventsData } = useQuery<{ events: any[] }>({
-    queryKey: ['upcoming-events'],
-    queryFn: async () => {
-      const response = await fetch('/api/events');
-      if (!response.ok) throw new Error('Failed to fetch events');
-      return response.json();
-    },
-    refetchInterval: 10000,
-  });
-
-  const { data: forumData } = useQuery<{ posts: any[] }>({
-    queryKey: ['recent-forum-posts'],
-    queryFn: async () => {
-      const response = await fetch('/api/forum/posts?limit=5&sortBy=recent');
-      if (!response.ok) throw new Error('Failed to fetch forum posts');
-      return response.json();
-    },
-    refetchInterval: 10000,
-  });
-
-  const { data: mentorsData } = useQuery<{ matches: any[] }>({
-    queryKey: ['/api/skill-swap/matches'],
-    queryFn: async () => {
-      const response = await fetch('/api/skill-swap/matches', {
-        headers: {
-          'Authorization': `Bearer ${idToken}`
-        }
-      });
-      if (!response.ok) return { matches: [] };
+      if (!response.ok) return { services: [] };
       return response.json();
     },
     enabled: !!idToken,
-    refetchInterval: 10000,
   });
 
-  const { data: adminCheck } = useQuery<{ isAdmin: boolean }>({
-    queryKey: ['admin-check'],
+  const { data: unreadMessagesData } = useQuery<{ count: number }>({
+    queryKey: ['unread-messages', userId],
     queryFn: async () => {
-      const response = await fetch('/api/admin/check', {
+      const response = await fetch('/api/messages/unread/count', {
         headers: {
-          'Authorization': `Bearer ${idToken}`
-        }
+          'Authorization': `Bearer ${idToken}`,
+        },
       });
-      if (!response.ok) return { isAdmin: false };
+      if (!response.ok) return { count: 0 };
       return response.json();
     },
     enabled: !!idToken,
-    retry: false,
-    meta: {
-      errorHandler: 'none', // Silent check - don't show error toasts for non-admin users
-    },
+    refetchInterval: 30000,
   });
 
-  const { data: lostFoundData = [] } = useQuery<any[]>({
-    queryKey: ['lost-found-count'],
+  const { data: unreadNotificationsData } = useQuery<{ count: number }>({
+    queryKey: ['unread-notifications', userId],
     queryFn: async () => {
-      const response = await fetch('/api/lost-and-found');
-      if (!response.ok) return [];
-      return response.json();
-    },
-    refetchInterval: 10000,
-  });
-
-  const { data: announcementsData } = useQuery<{ announcements: any[] }>({
-    queryKey: ['announcements-count'],
-    queryFn: async () => {
-      const response = await fetch('/api/announcements/active');
-      if (!response.ok) return { announcements: [] };
-      return response.json();
-    },
-    refetchInterval: 10000,
-  });
-
-  const { data: galleriesData } = useQuery<{ galleries: any[] }>({
-    queryKey: ['galleries-count'],
-    queryFn: async () => {
-      const response = await fetch('/api/galleries');
-      if (!response.ok) return { galleries: [] };
-      return response.json();
-    },
-    refetchInterval: 10000,
-  });
-
-  const { data: activityData } = useQuery<{ activities: any[] }>({
-    queryKey: ['recent-activities'],
-    queryFn: async () => {
-      const response = await fetch('/api/activity-feed?limit=5', {
+      const response = await fetch('/api/notifications/unread/count', {
         headers: {
-          'Authorization': `Bearer ${idToken}`
-        }
+          'Authorization': `Bearer ${idToken}`,
+        },
       });
-      if (!response.ok) return { activities: [] };
+      if (!response.ok) return { count: 0 };
       return response.json();
     },
     enabled: !!idToken,
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   });
 
-  const recentJobs = jobsData?.jobs?.slice(0, 5) || [];
-  const latestIdeas = ideasData?.ideas?.slice(0, 4) || [];
+  const activities = activityData?.activities || [];
+  const neighbors = usersData?.users?.slice(0, 5) || [];
+  const servicesCount = servicesData?.services?.length || 0;
   const upcomingEvents = eventsData?.events?.filter((e: any) => {
     try {
       return new Date(e.eventDate) >= new Date() && e.status === 'upcoming';
@@ -188,481 +203,175 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
       return false;
     }
   }).slice(0, 3) || [];
-  const recentForumPosts = forumData?.posts || [];
+  const recentJobs = jobsData?.jobs?.slice(0, 3) || [];
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
+  const stats = {
+    totalMembers: (usersData?.users?.length || 0) + 1,
+    activeToday: Math.floor(((usersData?.users?.length || 0) + 1) * 0.3),
+    totalServices: 150,
+  };
+
+  const userStats = {
+    contributions: activities.filter((a) => a.userId === userId).length,
+    connections: Math.floor((usersData?.users?.length || 0) * 0.2),
   };
 
   return (
-    <div className="min-h-screen bg-background pb-20 md:pb-0">
-      <div className="bg-gradient-to-r from-primary/10 to-purple-500/10 border-b">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-8">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 md:gap-3">
-              <Rocket className="w-5 h-5 md:w-6 md:h-6 text-primary" />
-              <h1 className="text-lg md:text-2xl font-bold text-foreground">Nirala Estate</h1>
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <AccountMenu user={user} onLogout={handleLogout} />
-              <div>
-                <p className="text-sm text-muted-foreground">Welcome back,</p>
-                <h2 className="text-lg md:text-xl font-semibold text-foreground">{user.fullName.split(' ')[0]}</h2>
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-white border-b shadow-sm fixed top-0 left-0 right-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-3">
+          <div className="flex items-center justify-between gap-4">
+            {/* Left Zone: Menu + Logo + Search */}
+            <div className="flex items-center gap-3 flex-1 max-w-xs">
+              <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="lg:hidden">
+                    <Menu className="w-5 h-5" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-80 overflow-y-auto">
+                  <SheetHeader>
+                    <SheetTitle>Menu</SheetTitle>
+                  </SheetHeader>
+                  <div className="mt-4">
+                    <UserProfileSidebar user={user} stats={userStats} />
+                  </div>
+                </SheetContent>
+              </Sheet>
+              <Rocket className="w-6 h-6 text-primary flex-shrink-0" />
+              <div className="hidden md:block flex-1 max-w-xs">
+                <GlobalSearch idToken={idToken} />
               </div>
+            </div>
+
+            {/* Center Zone: Icon Navigation */}
+            <div className="hidden lg:flex items-center gap-1">
+              <HeaderNavItem icon={Home} label="Home" href="/" />
+              <HeaderNavItem icon={Users} label="Network" href="/find-teammates" />
+              <HeaderNavItem icon={Briefcase} label="Jobs" href="/jobs" />
+              <HeaderNavItem icon={MessageCircle} label="Messages" href="/chat" badge={unreadMessagesData?.count || 0} />
+              <HeaderNavItem icon={Bell} label="Notifications" href="/notifications" badge={unreadNotificationsData?.count || 0} />
+            </div>
+
+            {/* Right Zone: Notifications + Account Menu */}
+            <div className="flex items-center gap-2">
+              <NotificationDropdown idToken={idToken} userId={userId} />
+              <AccountMenu user={user} onLogout={handleLogout} />
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-8">
-        {adminCheck?.isAdmin && (
-          <Card className="mb-4 md:mb-6 border-purple-500/50 bg-gradient-to-r from-purple-500/10 to-blue-500/10 hover-elevate cursor-pointer" onClick={() => setLocation('/admin')}>
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2 md:pb-3">
-              <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 md:w-5 md:h-5 text-purple-600" />
-                <CardTitle className="text-sm md:text-base font-semibold">Admin Panel</CardTitle>
-              </div>
-              <Badge variant="secondary" className="bg-purple-600 text-white text-xs">Admin</Badge>
-            </CardHeader>
-            <CardContent className="hidden md:block">
-              <p className="text-sm text-muted-foreground">
-                Manage platform settings, approve ideas, send broadcasts, and view analytics
-              </p>
-            </CardContent>
-          </Card>
-        )}
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 pt-[88px]">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <aside ref={leftSidebarContainerRef} className="lg:col-span-3 hidden lg:block">
+            <div 
+              ref={leftSidebarRef}
+              className="fixed top-[88px] overflow-y-auto"
+              style={{ 
+                left: `${leftSidebarLeft || 0}px`, 
+                width: `${leftSidebarWidth || 0}px`,
+                maxHeight: 'calc(100vh - 88px)'
+              }}
+            >
+              <UserProfileSidebar user={user} stats={userStats} />
+            </div>
+          </aside>
 
-        <div className="mb-6 md:mb-8">
-          <h2 className="text-lg md:text-xl font-bold mb-4">Platform Features</h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
-            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/lost-and-found')}>
-              <CardContent className="p-4 md:p-6 text-center">
-                <Search className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
-                <h3 className="font-semibold text-sm md:text-base mb-1">Lost & Found</h3>
-                <p className="text-xs text-muted-foreground mb-2">Post lost or found items</p>
-                <Badge variant="secondary">{lostFoundData?.length || 0} items</Badge>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/announcements')}>
-              <CardContent className="p-4 md:p-6 text-center">
-                <Megaphone className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
-                <h3 className="font-semibold text-sm md:text-base mb-1">Announcements</h3>
-                <p className="text-xs text-muted-foreground mb-2">Community updates</p>
-                <Badge variant="secondary">{announcementsData?.announcements?.length || 0} active</Badge>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/photo-gallery')}>
-              <CardContent className="p-4 md:p-6 text-center">
-                <Camera className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
-                <h3 className="font-semibold text-sm md:text-base mb-1">Photo Gallery</h3>
-                <p className="text-xs text-muted-foreground mb-2">Community photos</p>
-                <Badge variant="secondary">{galleriesData?.galleries?.length || 0} albums</Badge>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/marketplace')}>
-              <CardContent className="p-4 md:p-6 text-center">
-                <ShoppingCart className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
-                <h3 className="font-semibold text-sm md:text-base mb-1">Marketplace</h3>
-                <p className="text-xs text-muted-foreground mb-2">Buy, sell, exchange</p>
-                <Badge variant="secondary" className="bg-green-600 text-white">New</Badge>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/tool-rental')}>
-              <CardContent className="p-4 md:p-6 text-center">
-                <Wrench className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
-                <h3 className="font-semibold text-sm md:text-base mb-1">Tool Rental</h3>
-                <p className="text-xs text-muted-foreground mb-2">Rent or lend tools</p>
-                <Badge variant="secondary" className="bg-green-600 text-white">New</Badge>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/advertise')}>
-              <CardContent className="p-4 md:p-6 text-center">
-                <AdvertiseIcon className="w-8 h-8 md:w-10 md:h-10 text-primary mx-auto mb-2" />
-                <h3 className="font-semibold text-sm md:text-base mb-1">Advertise</h3>
-                <p className="text-xs text-muted-foreground mb-2">Promote your services</p>
-                <Badge variant="secondary" className="bg-green-600 text-white">New</Badge>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        <div className="mb-6 md:mb-8">
-          <h2 className="text-lg md:text-xl font-bold mb-4">Service Categories</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-            <Card className="hover-elevate cursor-pointer group">
-              <CardContent className="p-4 md:p-5 text-center">
-                <div className="text-3xl md:text-4xl mb-2">🍰</div>
-                <h3 className="font-semibold text-sm md:text-base mb-1">Food Network</h3>
-                <p className="text-xs text-muted-foreground">Tiffin, catering, baking</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer group">
-              <CardContent className="p-4 md:p-5 text-center">
-                <div className="text-3xl md:text-4xl mb-2">🚗</div>
-                <h3 className="font-semibold text-sm md:text-base mb-1">Smart Mobility</h3>
-                <p className="text-xs text-muted-foreground">Carpool, school run</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer group">
-              <CardContent className="p-4 md:p-5 text-center">
-                <div className="text-3xl md:text-4xl mb-2">🎁</div>
-                <h3 className="font-semibold text-sm md:text-base mb-1">Group Buying</h3>
-                <p className="text-xs text-muted-foreground">Bulk purchases, gifts</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer group">
-              <CardContent className="p-4 md:p-5 text-center">
-                <div className="text-3xl md:text-4xl mb-2">👶</div>
-                <h3 className="font-semibold text-sm md:text-base mb-1">Kids & Parenting</h3>
-                <p className="text-xs text-muted-foreground">Babysitting, playdates</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer group">
-              <CardContent className="p-4 md:p-5 text-center">
-                <div className="text-3xl md:text-4xl mb-2">📚</div>
-                <h3 className="font-semibold text-sm md:text-base mb-1">Learning & Classes</h3>
-                <p className="text-xs text-muted-foreground">Music, dance, tuition</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer group">
-              <CardContent className="p-4 md:p-5 text-center">
-                <div className="text-3xl md:text-4xl mb-2">🏥</div>
-                <h3 className="font-semibold text-sm md:text-base mb-1">Health & Wellness</h3>
-                <p className="text-xs text-muted-foreground">Doctor, yoga, therapy</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer group">
-              <CardContent className="p-4 md:p-5 text-center">
-                <div className="text-3xl md:text-4xl mb-2">💼</div>
-                <h3 className="font-semibold text-sm md:text-base mb-1">Professional</h3>
-                <p className="text-xs text-muted-foreground">Career, mentoring</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer group">
-              <CardContent className="p-4 md:p-5 text-center">
-                <div className="text-3xl md:text-4xl mb-2">💅</div>
-                <h3 className="font-semibold text-sm md:text-base mb-1">Beauty & Care</h3>
-                <p className="text-xs text-muted-foreground">Salon, mehendi, styling</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate cursor-pointer group">
-              <CardContent className="p-4 md:p-5 text-center">
-                <div className="text-3xl md:text-4xl mb-2">🎉</div>
-                <h3 className="font-semibold text-sm md:text-base mb-1">Event Organizing</h3>
-                <p className="text-xs text-muted-foreground">Parties, decoration</p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        <div className="mb-6 md:mb-8">
-          <h2 className="text-lg md:text-xl font-bold mb-4">Quick Stats</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 md:gap-4">
-            <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/find-teammates')}>
-              <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
-                <CardTitle className="text-xs md:text-sm font-medium">Community</CardTitle>
-                <Users className="w-3 h-3 md:w-4 md:h-4 text-primary" />
-              </CardHeader>
-            <CardContent className="p-3 md:p-4 pt-0">
-              <div className="text-2xl md:text-3xl font-bold">{(usersData?.users.length || 0) + 1}</div>
-              <p className="text-xs text-muted-foreground mt-1">Members</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/jobs')}>
-            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
-              <CardTitle className="text-xs md:text-sm font-medium">Jobs</CardTitle>
-              <Briefcase className="w-3 h-3 md:w-4 md:h-4 text-primary" />
-            </CardHeader>
-            <CardContent className="p-3 md:p-4 pt-0">
-              <div className="text-2xl md:text-3xl font-bold">{jobsData?.jobs?.length || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">Active</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/skill-swap')}>
-            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
-              <CardTitle className="text-xs md:text-sm font-medium">Mentors</CardTitle>
-              <GraduationCap className="w-3 h-3 md:w-4 md:h-4 text-primary" />
-            </CardHeader>
-            <CardContent className="p-3 md:p-4 pt-0">
-              <div className="text-2xl md:text-3xl font-bold">{mentorsData?.matches?.length || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">Available</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/ideas')}>
-            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
-              <CardTitle className="text-xs md:text-sm font-medium">Ideas</CardTitle>
-              <Lightbulb className="w-3 h-3 md:w-4 md:h-4 text-primary" />
-            </CardHeader>
-            <CardContent className="p-3 md:p-4 pt-0">
-              <div className="text-2xl md:text-3xl font-bold">{ideasData?.ideas?.length || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">Active</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/events')}>
-            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
-              <CardTitle className="text-xs md:text-sm font-medium">Events</CardTitle>
-              <CalendarDays className="w-3 h-3 md:w-4 md:h-4 text-primary" />
-            </CardHeader>
-            <CardContent className="p-3 md:p-4 pt-0">
-              <div className="text-2xl md:text-3xl font-bold">{upcomingEvents.length}</div>
-              <p className="text-xs text-muted-foreground mt-1">Upcoming</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/lost-and-found')}>
-            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
-              <CardTitle className="text-xs md:text-sm font-medium">Lost & Found</CardTitle>
-              <Search className="w-3 h-3 md:w-4 md:h-4 text-primary" />
-            </CardHeader>
-            <CardContent className="p-3 md:p-4 pt-0">
-              <div className="text-2xl md:text-3xl font-bold">{lostFoundData?.length || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">Items</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover-elevate cursor-pointer" onClick={() => setLocation('/announcements')}>
-            <CardHeader className="flex flex-row items-center justify-between gap-1 space-y-0 pb-1 md:pb-2 p-3 md:p-4">
-              <CardTitle className="text-xs md:text-sm font-medium">Announcements</CardTitle>
-              <Megaphone className="w-3 h-3 md:w-4 md:h-4 text-primary" />
-            </CardHeader>
-            <CardContent className="p-3 md:p-4 pt-0">
-              <div className="text-2xl md:text-3xl font-bold">{announcementsData?.announcements?.length || 0}</div>
-              <p className="text-xs text-muted-foreground mt-1">Active</p>
-            </CardContent>
-          </Card>
-          </div>
-        </div>
-
-        {recentJobs.length > 0 && (
-          <Card className="mb-6 md:mb-8">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base md:text-lg flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 md:w-5 md:h-5 text-primary" />
-                  Recent Jobs
-                </CardTitle>
-                <CardDescription className="text-xs md:text-sm mt-1">Latest opportunities in our community</CardDescription>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setLocation('/jobs')}>
-                View All <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {recentJobs.map((job: any) => (
-                  <div 
-                    key={job.id} 
-                    className="flex items-start justify-between gap-3 p-3 md:p-4 rounded-lg border hover:bg-accent cursor-pointer transition-colors"
-                    onClick={() => setLocation(`/jobs/${job.id}`)}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-sm md:text-base line-clamp-1">{job.title}</h3>
-                      <p className="text-xs md:text-sm text-muted-foreground line-clamp-1">{job.company}</p>
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        <Badge variant="secondary" className="text-xs">{job.experienceLevel}</Badge>
-                        {job.requiredTechStack.slice(0, 2).map((tech: string) => (
-                          <Badge key={tech} variant="outline" className="text-xs font-mono">{tech}</Badge>
-                        ))}
-                        {job.requiredTechStack.length > 2 && (
-                          <Badge variant="outline" className="text-xs">+{job.requiredTechStack.length - 2}</Badge>
-                        )}
-                      </div>
-                    </div>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {formatDistanceToNow(new Date(job.createdAt), { addSuffix: true })}
-                    </span>
+          <main className="lg:col-span-6">
+            <div className="mb-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-primary" />
+                      Activity Feed
+                    </CardTitle>
+                    <Tabs value={feedFilter} onValueChange={setFeedFilter}>
+                      <TabsList className="h-9">
+                        <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
+                        <TabsTrigger value="following" className="text-xs">Following</TabsTrigger>
+                        <TabsTrigger value="interests" className="text-xs">My Interests</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
                   </div>
+                </CardHeader>
+              </Card>
+            </div>
+
+            {activityLoading ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <Card key={i}>
+                    <CardContent className="p-4">
+                      <div className="flex gap-3">
+                        <Skeleton className="w-10 h-10 rounded-full" />
+                        <div className="flex-1 space-y-2">
+                          <Skeleton className="h-4 w-3/4" />
+                          <Skeleton className="h-3 w-full" />
+                          <Skeleton className="h-3 w-2/3" />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {activityData?.activities && activityData.activities.length > 0 && (
-          <Card className="mb-6 md:mb-8">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base md:text-lg flex items-center gap-2">
-                  <ActivityIcon className="w-4 h-4 md:w-5 md:h-5 text-primary" />
-                  Recent Activity
-                </CardTitle>
-                <CardDescription className="text-xs md:text-sm mt-1">What's happening in Nirala Estate</CardDescription>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setLocation('/activity-feed')}>
-                View All <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {activityData.activities.map((activity: any) => (
-                  <div 
-                    key={activity.id} 
-                    className="flex items-start gap-3 p-3 md:p-4 rounded-lg border hover:bg-accent cursor-pointer transition-colors"
-                    onClick={() => setLocation('/activity-feed')}
-                  >
-                    <Avatar className="w-8 h-8">
-                      {activity.user?.profilePhotoUrl ? (
-                        <AvatarImage src={activity.user.profilePhotoUrl} alt={activity.user.fullName} />
-                      ) : (
-                        <AvatarFallback>{getInitials(activity.user?.fullName || 'U')}</AvatarFallback>
-                      )}
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm md:text-base line-clamp-2">{activity.content}</p>
-                      <span className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
-                      </span>
-                    </div>
-                  </div>
+            ) : activities.length > 0 ? (
+              <div className="space-y-4">
+                {activities.map((activity) => (
+                  <ActivityFeedItem key={activity.id} activity={activity} />
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        )}
+            ) : (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Sparkles className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-muted-foreground">No activities yet</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Be the first to post something!
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </main>
 
-        <div className="grid md:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
-          {latestIdeas.length > 0 && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base md:text-lg flex items-center gap-2">
-                  <Lightbulb className="w-4 h-4 md:w-5 md:h-5 text-primary" />
-                  Latest Ideas
-                </CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setLocation('/ideas')}>
-                  <ArrowRight className="w-4 h-4" />
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {latestIdeas.map((idea: any) => (
-                    <div 
-                      key={idea.id}
-                      className="p-3 rounded-lg border hover:bg-accent cursor-pointer transition-colors"
-                      onClick={() => setLocation(`/ideas/${idea.id}`)}
-                    >
-                      <h4 className="font-semibold text-sm line-clamp-1">{idea.title}</h4>
-                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{idea.description}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge variant="outline" className="text-xs">{idea.interestCount} interested</Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(idea.createdAt), { addSuffix: true })}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <aside ref={rightSidebarContainerRef} className="lg:col-span-3 hidden lg:block">
+            <div 
+              ref={rightSidebarRef}
+              className={rightSidebarShort ? "fixed top-[88px]" : "sticky top-[88px]"}
+              style={rightSidebarShort ? { right: `${rightSidebarRight}px`, width: `${rightSidebarWidth}px` } : undefined}
+            >
+              <SuggestionsSidebar 
+                neighbors={neighbors}
+                events={upcomingEvents}
+                jobs={recentJobs}
+                servicesCount={servicesCount}
+                stats={stats}
+              />
+            </div>
+          </aside>
 
-          {upcomingEvents.length > 0 && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base md:text-lg flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 md:w-5 md:h-5 text-primary" />
-                  Upcoming Events
-                </CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setLocation('/events')}>
-                  <ArrowRight className="w-4 h-4" />
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {upcomingEvents.map((event: any) => (
-                    <div 
-                      key={event.id}
-                      className="p-3 rounded-lg border hover:bg-accent cursor-pointer transition-colors"
-                      onClick={() => setLocation(`/events/${event.id}`)}
-                    >
-                      <h4 className="font-semibold text-sm line-clamp-1">{event.title}</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {new Date(event.eventDate).toLocaleDateString('en-US', { 
-                          month: 'short', 
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit'
-                        })}
-                      </p>
-                      <Badge variant="secondary" className="text-xs mt-2">{event.rsvpCount || 0} attending</Badge>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t p-2 z-10">
+            <div className="flex justify-around items-center">
+              <button onClick={() => setMobileMenuOpen(true)} className="text-center flex-1 py-2">
+                <div className="text-2xl">☰</div>
+                <div className="text-xs">Menu</div>
+              </button>
+              <button onClick={() => setLocation('/events')} className="text-center flex-1 py-2">
+                <div className="text-2xl">📅</div>
+                <div className="text-xs">Events</div>
+              </button>
+              <button onClick={() => setLocation('/jobs')} className="text-center flex-1 py-2">
+                <div className="text-2xl">💼</div>
+                <div className="text-xs">Jobs</div>
+              </button>
+              <button onClick={() => setLocation('/profile')} className="text-center flex-1 py-2">
+                <div className="text-2xl">👤</div>
+                <div className="text-xs">Profile</div>
+              </button>
+            </div>
+          </div>
         </div>
-
-        {recentForumPosts.length > 0 && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-base md:text-lg flex items-center gap-2">
-                  <MessagesSquare className="w-4 h-4 md:w-5 md:h-5 text-primary" />
-                  Recent Discussions
-                </CardTitle>
-                <CardDescription className="text-xs md:text-sm mt-1">Latest from the Tech Forum</CardDescription>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setLocation('/forum')}>
-                View All <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {recentForumPosts.map((post: any) => (
-                  <div 
-                    key={post.id}
-                    className="flex items-start gap-3 p-3 md:p-4 rounded-lg border hover:bg-accent cursor-pointer transition-colors"
-                    onClick={() => setLocation(`/forum/post/${post.id}`)}
-                  >
-                    <Avatar className="w-8 h-8 md:w-10 md:h-10">
-                      <AvatarImage src={post.author?.profilePhotoUrl} />
-                      <AvatarFallback className="text-xs bg-primary/10">
-                        {getInitials(post.author?.fullName || '')}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-sm line-clamp-1">{post.title}</h4>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        by {post.author?.fullName} • {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
-                      </p>
-                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                        <span>{post.replyCount || 0} replies</span>
-                        <span>{post.viewCount || 0} views</span>
-                        {post.category && (
-                          <Badge variant="outline" className="text-xs">{post.category.name}</Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </div>
   );

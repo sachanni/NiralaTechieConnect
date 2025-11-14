@@ -42,18 +42,32 @@ export default function EmailPasswordLogin({
 
     setLoading(true);
     try {
-      const idToken = await emailPasswordService.signInWithEmail(email, password);
-      onLoginSuccess(idToken);
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
+
+      localStorage.setItem('accessToken', data.accessToken);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      
+      onLoginSuccess(data.accessToken);
     } catch (error: any) {
       console.error('Login error:', error);
       
-      let errorMessage = "Invalid email or password";
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-        errorMessage = "Invalid email or password. Please try again.";
-      } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = "Too many failed attempts. Please try again later.";
-      } else if (error.code === 'auth/network-request-failed') {
-        errorMessage = "Network error. Please check your connection.";
+      let errorMessage = error.message || "Invalid email or password";
+      
+      if (errorMessage.includes('locked')) {
+        errorMessage = "Account temporarily locked due to multiple failed attempts. Please try again later.";
+      } else if (errorMessage.includes('not found')) {
+        errorMessage = "No account found with this email. Please check your email or register.";
       }
       
       toast({

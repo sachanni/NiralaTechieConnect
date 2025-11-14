@@ -49,10 +49,13 @@ export const users = pgTable("users", {
   isSuspended: integer("is_suspended").notNull().default(0),
   suspensionReason: text("suspension_reason"),
   suspendedAt: timestamp("suspended_at"),
-  suspendedBy: varchar("suspended_by").references(() => users.id),
+  suspendedBy: varchar("suspended_by"),
   forceLogoutAfter: timestamp("force_logout_after"),
   passwordResetToken: varchar("password_reset_token"),
   passwordResetExpiry: timestamp("password_reset_expiry"),
+  hashedPassword: varchar("hashed_password", { length: 72 }),
+  failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
+  accountLockedUntil: timestamp("account_locked_until"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -78,6 +81,8 @@ export const insertUserSchema = createInsertSchema(users).omit({
   forceLogoutAfter: true,
   passwordResetToken: true,
   passwordResetExpiry: true,
+  failedLoginAttempts: true,
+  accountLockedUntil: true,
   createdAt: true,
 });
 
@@ -104,6 +109,41 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const notifications = pgTable("notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  type: text("type").notNull(),
+  category: text("category"),
+  priority: text("priority").notNull().default('medium'),
+  entityId: varchar("entity_id"),
+  actorId: varchar("actor_id").references(() => users.id),
+  groupId: varchar("group_id"),
+  payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`).$type<Record<string, any>>(),
+  readAt: timestamp("read_at"),
+  dismissedAt: timestamp("dismissed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const notificationPreferences = pgTable("notification_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  category: text("category").notNull(),
+  subcategory: text("subcategory").notNull(),
+  inAppEnabled: integer("in_app_enabled").notNull().default(1),
+  emailEnabled: integer("email_enabled").notNull().default(0),
+  emailFrequency: text("email_frequency").notNull().default('daily'),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const userCategoryInterests = pgTable("user_category_interests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  categoryType: text("category_type").notNull(),
+  categoryValue: text("category_value").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const insertConversationSchema = createInsertSchema(conversations).omit({
   id: true,
   createdAt: true,
@@ -114,10 +154,32 @@ export const insertMessageSchema = createInsertSchema(messages).omit({
   createdAt: true,
 });
 
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertNotificationPreferenceSchema = createInsertSchema(notificationPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserCategoryInterestSchema = createInsertSchema(userCategoryInterests).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type InsertConversation = z.infer<typeof insertConversationSchema>;
 export type Conversation = typeof conversations.$inferSelect;
 export type InsertMessage = z.infer<typeof insertMessageSchema>;
 export type Message = typeof messages.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotificationPreference = z.infer<typeof insertNotificationPreferenceSchema>;
+export type NotificationPreference = typeof notificationPreferences.$inferSelect;
+export type InsertUserCategoryInterest = z.infer<typeof insertUserCategoryInterestSchema>;
+export type UserCategoryInterest = typeof userCategoryInterests.$inferSelect;
 
 export const messageReactions = pgTable("message_reactions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -201,7 +263,7 @@ export const ideas = pgTable("ideas", {
   description: text("description").notNull(),
   rolesNeeded: text("roles_needed").array().notNull(),
   payStructure: text("pay_structure").notNull(),
-  status: text("status").notNull().default('pending'),
+  status: text("status").notNull().default('approved'),
   interestCount: integer("interest_count").notNull().default(0),
   upvoteCount: integer("upvote_count").notNull().default(0),
   commentCount: integer("comment_count").notNull().default(0),
@@ -1056,3 +1118,21 @@ export type InsertRentalReview = z.infer<typeof insertRentalReviewSchema>;
 export type RentalReview = typeof rentalReviews.$inferSelect;
 export type InsertRentalFavorite = z.infer<typeof insertRentalFavoriteSchema>;
 export type RentalFavorite = typeof rentalFavorites.$inferSelect;
+
+// User Services - Service-level selections with provider/seeker roles
+export const userServices = pgTable("user_services", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  serviceId: text("service_id").notNull(), // e.g., "office_carpool", "tiffin"
+  categoryId: text("category_id").notNull(), // e.g., "mobility", "food"
+  roleType: text("role_type").notNull(), // "provider" or "seeker"
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertUserServiceSchema = createInsertSchema(userServices).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertUserService = z.infer<typeof insertUserServiceSchema>;
+export type UserService = typeof userServices.$inferSelect;

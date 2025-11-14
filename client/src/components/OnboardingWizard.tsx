@@ -224,51 +224,40 @@ export default function OnboardingWizard({ open, onComplete, userId, idToken }: 
         )}
 
         {step === 2 && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 text-lg font-semibold">
-              <Lightbulb className="w-5 h-5 text-primary" />
-              Share Your Expertise
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Select skills you can teach and skills you want to learn. This helps neighbors find you!
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <Label className="text-base font-semibold mb-3 block">I can teach:</Label>
-                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
-                  {availableSkills.map((skill) => (
-                    <div
-                      key={skill}
-                      onClick={() => toggleSkillTeach(skill)}
-                      className={`px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
-                        selectedTeach.includes(skill)
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-secondary hover:bg-secondary/80'
-                      }`}
-                    >
-                      {skill}
-                    </div>
-                  ))}
-                </div>
+          <div className="space-y-6">
+            <div className="text-center space-y-2">
+              <div className="flex items-center justify-center gap-2 text-xl font-semibold">
+                <Lightbulb className="w-6 h-6 text-primary" />
+                Share Your Expertise
               </div>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                You can set up your skills later in settings. Click <strong>Next</strong> to continue or <strong>Skip</strong> to set up later.
+              </p>
+            </div>
 
-              <div>
-                <Label className="text-base font-semibold mb-3 block">I want to learn:</Label>
-                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
-                  {availableSkills.map((skill) => (
-                    <div
-                      key={skill}
-                      onClick={() => toggleSkillLearn(skill)}
-                      className={`px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
-                        selectedLearn.includes(skill)
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-secondary hover:bg-secondary/80'
-                      }`}
-                    >
-                      {skill}
-                    </div>
-                  ))}
+            <Card className="bg-gradient-to-br from-blue-50 to-purple-50 border-primary/20">
+              <CardContent className="p-6">
+                <div className="text-center space-y-3">
+                  <div className="text-4xl mb-2">🎯</div>
+                  <h3 className="font-semibold text-lg">Want to add your skills now?</h3>
+                  <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                    Share what you can teach and what you'd like to learn to help neighbors find you. This is optional and can be done anytime from your profile settings.
+                  </p>
+                  <div className="pt-2 text-xs text-muted-foreground">
+                    <p className="font-medium">Examples: Cooking • Web Development • Yoga • Music • Photography</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="text-2xl">💡</div>
+                <div className="flex-1 text-sm">
+                  <p className="font-medium text-blue-900 mb-1">Tip: You can customize this later!</p>
+                  <p className="text-blue-700">
+                    Go to Settings → Profile anytime to add or update your skills, expertise, and interests.
+                  </p>
                 </div>
               </div>
             </div>

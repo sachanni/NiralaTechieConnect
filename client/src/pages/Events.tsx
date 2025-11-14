@@ -193,7 +193,7 @@ export default function Events({ userId, idToken }: EventsProps = {}) {
             <p className="text-muted-foreground mb-4">
               {searchQuery 
                 ? 'Try adjusting your search terms' 
-                : eventType === 'upcoming' 
+                : eventTimeType === 'upcoming' 
                   ? 'Check back soon for new events!' 
                   : 'No past events to display'}
             </p>
@@ -271,7 +271,7 @@ export default function Events({ userId, idToken }: EventsProps = {}) {
                             >
                               {event.rsvpCount} / {event.maxAttendees} attending
                             </Badge>
-                            {isAlmostFull && eventType === 'upcoming' && (
+                            {isAlmostFull && eventTimeType === 'upcoming' && (
                               <Badge variant="destructive" className="text-xs">
                                 Almost Full!
                               </Badge>

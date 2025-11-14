@@ -4,7 +4,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Lock, CheckCircle } from "lucide-react";
+import { Lock, CheckCircle, AlertCircle } from "lucide-react";
+import PasswordInputWithValidation from "./PasswordInputWithValidation";
+import { evaluatePassword } from "@/lib/passwordValidation";
 
 interface PasswordResetFormProps {
   phoneNumber: string;
@@ -34,10 +36,11 @@ export default function PasswordResetForm({
       return;
     }
 
-    if (newPassword.length < 6) {
+    const passwordValidation = evaluatePassword(newPassword);
+    if (!passwordValidation.isValid) {
       toast({
-        title: "Password Too Short",
-        description: "Password must be at least 6 characters long",
+        title: "Weak Password",
+        description: "Please ensure your password meets all security requirements",
         variant: "destructive",
       });
       return;
@@ -99,20 +102,12 @@ export default function PasswordResetForm({
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="new-password">New Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                <Input
-                  id="new-password"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new password (min. 6 characters)"
-                  className="h-12 pl-10"
-                  required
-                  autoComplete="new-password"
-                  minLength={6}
-                />
-              </div>
+              <PasswordInputWithValidation
+                value={newPassword}
+                onChange={setNewPassword}
+                id="new-password"
+                placeholder="Create a secure password"
+              />
             </div>
 
             <div className="space-y-2">
@@ -128,10 +123,16 @@ export default function PasswordResetForm({
                   className="h-12 pl-10"
                   required
                   autoComplete="new-password"
-                  minLength={6}
                 />
               </div>
             </div>
+
+            {newPassword && confirmPassword && newPassword !== confirmPassword && (
+              <p className="text-sm text-destructive flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                Passwords do not match
+              </p>
+            )}
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
               <p className="flex items-center gap-2">
@@ -143,7 +144,7 @@ export default function PasswordResetForm({
             <Button
               type="submit"
               className="w-full h-12 text-base font-semibold"
-              disabled={loading}
+              disabled={loading || !evaluatePassword(newPassword).isValid || newPassword !== confirmPassword}
             >
               {loading ? (
                 <>

@@ -7,7 +7,10 @@ import { getPhoneNumberFromToken, getUserIdentifierFromToken, verifyIdToken } fr
 import { insertUserSchema, insertMessageSchema } from "@shared/schema";
 import { createRazorpayOrder, verifyRazorpaySignature, getRazorpayKeyId } from "./razorpay";
 import { sendPasswordResetEmail, sendWelcomeEmail } from "./lib/sendgrid";
-import { setPasswordResetToken, getUserByPasswordResetToken, clearPasswordResetToken } from "./storage-methods";
+import { setPasswordResetToken, getUserByPasswordResetToken, clearPasswordResetToken, getActivityFeed, incrementFailedLoginAttempts, lockUserAccount, resetFailedLoginAttempts } from "./storage-methods";
+import { hashPassword, verifyPassword, validateEmail, validatePassword, generateAccessToken, generateRefreshToken, verifyToken, isAccountLocked, MAX_LOGIN_ATTEMPTS, LOCKOUT_DURATION_MINUTES, calculateLockoutUntil } from "./auth-utils";
+import { notificationHelper } from "./notification-helper";
+import { NOTIFICATION_TYPES } from "./notification-types";
 import multer from "multer";
 import path from "path";
 import { promises as fs } from "fs";
@@ -286,10 +289,21 @@ async function authenticateUser(req: AuthRequest, res: Response, next: NextFunct
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const idToken = authHeader.split('Bearer ')[1];
-    const decodedToken = await verifyIdToken(idToken);
-    req.userId = decodedToken.uid;
-    next();
+    const token = authHeader.split('Bearer ')[1];
+    
+    try {
+      const jwtPayload = verifyToken(token);
+      req.userId = jwtPayload.userId;
+      return next();
+    } catch (jwtError: any) {
+      try {
+        const firebaseToken = await verifyIdToken(token);
+        req.userId = firebaseToken.uid;
+        return next();
+      } catch (firebaseError: any) {
+        return res.status(401).json({ error: "Unauthorized - Invalid token" });
+      }
+    }
   } catch (error: any) {
     return res.status(401).json({ error: "Unauthorized" });
   }
@@ -313,6 +327,166 @@ async function authorizeAdmin(req: AuthRequest, res: Response, next: NextFunctio
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { email, password, phoneNumber, fullName, flatNumber, towerName, residencyType, residentSince } = req.body;
+      
+      const emailValidation = validateEmail(email);
+      if (!emailValidation.valid) {
+        return res.status(400).json({ error: emailValidation.error });
+      }
+      
+      const passwordValidation = validatePassword(password);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({ error: passwordValidation.error });
+      }
+      
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ error: "Email already registered" });
+      }
+      
+      const hashedPassword = await hashPassword(password);
+      
+      const userId = randomUUID();
+      const user = await storage.createUser({
+        id: userId,
+        email,
+        phoneNumber,
+        fullName,
+        flatNumber,
+        towerName,
+        residencyType,
+        residentSince,
+        hashedPassword,
+        serviceCategories: [],
+        categoryRoles: {},
+      });
+      
+      const accessToken = generateAccessToken(user.id, user.email);
+      const refreshToken = generateRefreshToken(user.id, user.email);
+      
+      res.cookie('refreshToken', refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+      
+      return res.json({
+        accessToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+        },
+      });
+    } catch (error: any) {
+      console.error('[Registration] Error:', error);
+      return res.status(500).json({ error: "Registration failed" });
+    }
+  });
+  
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password required" });
+      }
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      
+      if (user.accountLockedUntil && isAccountLocked(user.accountLockedUntil)) {
+        const lockTimeRemaining = Math.ceil((new Date(user.accountLockedUntil).getTime() - Date.now()) / 60000);
+        return res.status(403).json({ 
+          error: `Account temporarily locked. Try again in ${lockTimeRemaining} minutes.` 
+        });
+      }
+      
+      if (!user.hashedPassword) {
+        return res.status(400).json({ 
+          error: "Please set a password first using the password reset feature" 
+        });
+      }
+      
+      const isValidPassword = await verifyPassword(password, user.hashedPassword);
+      
+      if (!isValidPassword) {
+        await incrementFailedLoginAttempts(user.id);
+        const failedAttempts = (user.failedLoginAttempts || 0) + 1;
+        
+        if (failedAttempts >= MAX_LOGIN_ATTEMPTS) {
+          const lockoutUntil = calculateLockoutUntil();
+          await lockUserAccount(user.id, lockoutUntil);
+          return res.status(403).json({ 
+            error: `Too many failed attempts. Account locked for ${LOCKOUT_DURATION_MINUTES} minutes.` 
+          });
+        }
+        
+        return res.status(401).json({ 
+          error: `Invalid email or password. ${MAX_LOGIN_ATTEMPTS - failedAttempts} attempts remaining.` 
+        });
+      }
+      
+      await resetFailedLoginAttempts(user.id);
+      
+      const accessToken = generateAccessToken(user.id, user.email);
+      const refreshToken = generateRefreshToken(user.id, user.email);
+      
+      res.cookie('refreshToken', refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+      
+      return res.json({
+        accessToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+        },
+      });
+    } catch (error: any) {
+      console.error('[Login] Error:', error);
+      return res.status(500).json({ error: "Login failed" });
+    }
+  });
+  
+  app.post("/api/auth/refresh", async (req, res) => {
+    try {
+      const refreshToken = req.cookies.refreshToken;
+      
+      if (!refreshToken) {
+        return res.status(401).json({ error: "No refresh token provided" });
+      }
+      
+      const payload = verifyToken(refreshToken);
+      
+      if (payload.type !== 'refresh') {
+        return res.status(401).json({ error: "Invalid token type" });
+      }
+      
+      const user = await storage.getUser(payload.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      const newAccessToken = generateAccessToken(user.id, user.email);
+      
+      return res.json({ accessToken: newAccessToken });
+    } catch (error: any) {
+      console.error('[Token Refresh] Error:', error);
+      return res.status(401).json({ error: "Invalid or expired refresh token" });
+    }
+  });
+
   app.post("/api/auth/send-password-reset", async (req, res) => {
     try {
       const { email } = req.body;
@@ -452,6 +626,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Update password for the Firebase user
       await admin.updateUserPassword(firebaseUid, newPassword, user.email);
+      
+      // CRITICAL: Also update the local PostgreSQL database hashedPassword field
+      // This is necessary for local email/password login to work
+      const hashedPassword = await hashPassword(newPassword);
+      await storage.updateUser(user.id, { hashedPassword });
       
       await clearPasswordResetToken(user.id);
       
@@ -763,6 +942,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/activity-feed", async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+      const activities = await getActivityFeed(limit);
+      return res.json({ activities });
+    } catch (error: any) {
+      console.error('Activity feed error:', error);
+      return res.status(500).json({ error: "Failed to fetch activity feed" });
+    }
+  });
+
   app.get("/api/services/:categoryId/users", async (req, res) => {
     try {
       const { categoryId } = req.params;
@@ -777,6 +967,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({ error: "Failed to get users" });
     }
   });
+
+  // ============================================================================
+  // CRITICAL: Specific /api/users/* routes MUST be defined BEFORE the 
+  // parameterized /api/users/:id route to prevent routing conflicts
+  // ============================================================================
+
+  app.get("/api/users/settings", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const settings = await storage.getUserSettings(userId);
+      return res.json({ settings });
+    } catch (error: any) {
+      console.error('Get user settings error:', error);
+      if (error.message === 'User not found') {
+        return res.status(404).json({ error: "User not found" });
+      }
+      return res.status(500).json({ error: "Failed to fetch settings" });
+    }
+  });
+
+  app.get("/api/users/services", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const services = await storage.getUserServices(userId);
+      return res.json({ services });
+    } catch (error: any) {
+      console.error('Get user services error:', error);
+      return res.status(500).json({ error: "Failed to fetch services" });
+    }
+  });
+
+  app.get("/api/users/experts", async (req, res) => {
+    try {
+      const { specialty, minYears } = req.query;
+      
+      const experts = await storage.getExperts({
+        specialty: specialty as string,
+        minYears: minYears ? parseInt(minYears as string, 10) : 10,
+      });
+      
+      return res.json({ experts });
+    } catch (error: any) {
+      console.error('Get experts error:', error);
+      return res.status(500).json({ error: "Failed to get experts" });
+    }
+  });
+
+  // ============================================================================
+  // Parameterized route - must come AFTER all specific /api/users/* routes
+  // ============================================================================
 
   app.get("/api/users/:id", async (req, res) => {
     try {
@@ -886,6 +1126,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Get unread count error:', error);
       return res.status(500).json({ error: "Failed to get unread count" });
+    }
+  });
+
+  app.get("/api/notifications/unread/count", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const count = await storage.getUnreadNotificationCount(userId);
+      return res.json({ count });
+    } catch (error: any) {
+      console.error('Get unread notification count error:', error);
+      return res.status(500).json({ error: "Failed to get unread notification count" });
+    }
+  });
+
+  app.get("/api/notifications", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+      const notificationsList = await storage.getNotifications(userId, limit);
+      return res.json({ notifications: notificationsList });
+    } catch (error: any) {
+      console.error('Get notifications error:', error);
+      return res.status(500).json({ error: "Failed to get notifications" });
+    }
+  });
+
+  app.post("/api/notifications/:id/read", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const { id: notificationId } = req.params;
+      await storage.markNotificationAsRead(notificationId, userId);
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error('Mark notification as read error:', error);
+      return res.status(500).json({ error: "Failed to mark notification as read" });
+    }
+  });
+
+  app.post("/api/notifications/mark-all-read", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      await storage.markAllNotificationsAsRead(userId);
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error('Mark all notifications as read error:', error);
+      return res.status(500).json({ error: "Failed to mark all notifications as read" });
+    }
+  });
+
+  app.get("/api/notifications/preferences", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const preferences = await storage.getNotificationPreferences(userId);
+      return res.json({ preferences });
+    } catch (error: any) {
+      console.error('Get notification preferences error:', error);
+      return res.status(500).json({ error: "Failed to get notification preferences" });
+    }
+  });
+
+  app.put("/api/notifications/preferences", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const { preferences } = req.body;
+      
+      if (!preferences || !Array.isArray(preferences)) {
+        return res.status(400).json({ error: "Preferences array is required" });
+      }
+
+      // Validate each preference object
+      for (const pref of preferences) {
+        if (!pref.id || typeof pref.id !== 'string') {
+          return res.status(400).json({ error: "Each preference must have a valid id" });
+        }
+        if (pref.inAppEnabled !== undefined && typeof pref.inAppEnabled !== 'boolean') {
+          return res.status(400).json({ error: "inAppEnabled must be a boolean" });
+        }
+        if (pref.emailEnabled !== undefined && typeof pref.emailEnabled !== 'boolean') {
+          return res.status(400).json({ error: "emailEnabled must be a boolean" });
+        }
+        if (pref.emailFrequency !== undefined) {
+          const validFrequencies = ['instant', 'daily', 'weekly', 'digest'];
+          if (!validFrequencies.includes(pref.emailFrequency)) {
+            return res.status(400).json({ 
+              error: `emailFrequency must be one of: ${validFrequencies.join(', ')}` 
+            });
+          }
+        }
+      }
+
+      await storage.updateNotificationPreferences(userId, preferences);
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.error('Update notification preferences error:', error);
+      if (error.message.includes('must be')) {
+        return res.status(400).json({ error: error.message });
+      }
+      return res.status(500).json({ error: "Failed to update notification preferences" });
     }
   });
 
@@ -1308,6 +1646,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const application = await storage.updateApplicationStatus(applicationId, status, userId);
+      
+      await notificationHelper.createSmartNotification({
+        userId: application.applicantId,
+        type: NOTIFICATION_TYPES.JOB_APPLICATION_STATUS,
+        entityId: application.id,
+        actorId: userId,
+        payload: {
+          jobId: application.jobId,
+          status: status,
+        },
+      });
+
       return res.json({ application });
     } catch (error: any) {
       console.error('Update application status error:', error);
@@ -1762,20 +2112,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/users/settings", authenticateUser, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.userId!;
-      const settings = await storage.getUserSettings(userId);
-      return res.json({ settings });
-    } catch (error: any) {
-      console.error('Get user settings error:', error);
-      if (error.message === 'User not found') {
-        return res.status(404).json({ error: "User not found" });
-      }
-      return res.status(500).json({ error: "Failed to fetch settings" });
-    }
-  });
-
   app.put("/api/users/settings", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const userId = req.userId!;
@@ -1859,6 +2195,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put("/api/users/services", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const { services } = req.body;
+
+      if (!Array.isArray(services)) {
+        return res.status(400).json({ error: "Services must be an array" });
+      }
+
+      // Validate each service object
+      for (const service of services) {
+        if (!service.serviceId || !service.categoryId || !service.roleType) {
+          return res.status(400).json({ error: "Each service must have serviceId, categoryId, and roleType" });
+        }
+        if (service.roleType !== 'provider' && service.roleType !== 'seeker') {
+          return res.status(400).json({ error: "roleType must be 'provider' or 'seeker'" });
+        }
+      }
+
+      await storage.setUserServices(userId, services);
+      return res.json({ success: true, message: "Services updated successfully" });
+    } catch (error: any) {
+      console.error('Update user services error:', error);
+      return res.status(500).json({ error: "Failed to update services" });
+    }
+  });
+
   app.post("/api/users/complete-onboarding", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const userId = req.userId!;
@@ -1884,22 +2247,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Global search error:', error);
       return res.status(500).json({ error: "Failed to perform search" });
-    }
-  });
-
-  app.get("/api/users/experts", async (req, res) => {
-    try {
-      const { specialty, minYears } = req.query;
-      
-      const experts = await storage.getExperts({
-        specialty: specialty as string,
-        minYears: minYears ? parseInt(minYears as string, 10) : 10,
-      });
-      
-      return res.json({ experts });
-    } catch (error: any) {
-      console.error('Get experts error:', error);
-      return res.status(500).json({ error: "Failed to get experts" });
     }
   });
 
@@ -1989,6 +2336,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: message || null,
         meetingLink,
         calendarEventId,
+      });
+
+      await notificationHelper.createSmartNotification({
+        userId: mentorId,
+        type: NOTIFICATION_TYPES.SKILL_SWAP_REQUEST,
+        entityId: session.id,
+        actorId: userId,
+        payload: {
+          skillTopic,
+          sessionDate,
+          sessionTime,
+          sessionType,
+          message,
+        },
       });
 
       return res.status(201).json({ session });
@@ -3720,6 +4081,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: 'available',
         });
 
+        await notificationHelper.notifyInterestedUsers({
+          type: NOTIFICATION_TYPES.MARKETPLACE_NEW_ITEM,
+          categoryType: 'marketplace',
+          categoryValue: req.body.category,
+          entityId: item.id,
+          actorId: req.userId!,
+          payload: {
+            title: req.body.title,
+            price: req.body.price,
+            listingType: req.body.listingType,
+          },
+          excludeUserId: req.userId!,
+        });
+
         res.json(item);
       } catch (error: any) {
         console.error('Error creating marketplace item:', error);
@@ -3788,6 +4163,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/marketplace/:id/offer", authenticateUser, async (req: AuthRequest, res) => {
     try {
+      const item = await storage.getMarketplaceItem(req.params.id);
+      
       const offer = await storage.createMarketplaceOffer({
         itemId: req.params.id,
         buyerId: req.userId!,
@@ -3795,6 +4172,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         exchangeOffer: req.body.exchangeOffer || null,
         message: req.body.message || null,
       });
+
+      if (item) {
+        await notificationHelper.createSmartNotification({
+          userId: item.sellerId,
+          type: NOTIFICATION_TYPES.MARKETPLACE_OFFER_RECEIVED,
+          entityId: offer.id,
+          actorId: req.userId!,
+          payload: {
+            itemId: item.id,
+            itemTitle: item.title,
+            offerAmount: req.body.offerAmount,
+            exchangeOffer: req.body.exchangeOffer,
+            message: req.body.message,
+          },
+        });
+      }
+
       res.json(offer);
     } catch (error: any) {
       console.error('Error creating offer:', error);
@@ -3817,6 +4211,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/marketplace/offers/:id", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const offer = await storage.updateOfferStatus(req.params.id, req.userId!, req.body.status);
+      
+      const item = await storage.getMarketplaceItem(offer.itemId);
+      
+      const notificationType = req.body.status === 'accepted' 
+        ? NOTIFICATION_TYPES.MARKETPLACE_OFFER_ACCEPTED 
+        : NOTIFICATION_TYPES.MARKETPLACE_OFFER_REJECTED;
+
+      await notificationHelper.createSmartNotification({
+        userId: offer.buyerId,
+        type: notificationType,
+        entityId: offer.id,
+        actorId: req.userId!,
+        payload: {
+          itemId: offer.itemId,
+          itemTitle: item?.title,
+          offerAmount: offer.offerAmount,
+          status: req.body.status,
+        },
+      });
+
       res.json(offer);
     } catch (error: any) {
       console.error('Error updating offer status:', error);
@@ -3895,17 +4309,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const item = await storage.createRentalItem({
           ownerId: req.userId!,
-          itemName: req.body.itemName,
+          title: req.body.itemName,
           description: req.body.description,
           category: req.body.category,
-          condition: req.body.condition,
-          rentalPrice: parseInt(req.body.rentalPrice),
-          priceUnit: req.body.priceUnit || 'day',
-          deposit: req.body.deposit ? parseInt(req.body.deposit) : 0,
-          minRentalDuration: req.body.minRentalDuration ? parseInt(req.body.minRentalDuration) : null,
-          maxRentalDuration: req.body.maxRentalDuration ? parseInt(req.body.maxRentalDuration) : null,
+          condition: req.body.condition || 'Good',
+          rentalPrice: parseInt(req.body.dailyRate || req.body.rentalPrice),
+          securityDeposit: req.body.deposit ? parseInt(req.body.deposit) : 0,
           images: imageUrls,
           location: req.body.location,
+          pickupLocation: req.body.location,
           availability: 'available',
         });
 
@@ -3984,6 +4396,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/rentals/:id/book", authenticateUser, async (req: AuthRequest, res) => {
     try {
+      const rentalItem = await storage.getRentalItem(req.params.id);
+      
+      if (!rentalItem) {
+        return res.status(404).json({ error: 'Rental item not found' });
+      }
+      
       const booking = await storage.createRentalBooking({
         itemId: req.params.id,
         renterId: req.userId!,
@@ -3993,6 +4411,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         depositPaid: req.body.depositPaid !== undefined ? parseInt(req.body.depositPaid) : 0,
         notes: req.body.notes || null,
       });
+
+      await notificationHelper.createSmartNotification({
+        userId: rentalItem.ownerId,
+        type: NOTIFICATION_TYPES.RENTAL_BOOKING_REQUEST,
+        entityId: booking.id,
+        actorId: req.userId!,
+        payload: {
+          itemId: rentalItem.id,
+          itemTitle: rentalItem.title,
+          startDate: req.body.startDate,
+          endDate: req.body.endDate,
+          totalAmount: req.body.totalAmount,
+        },
+      });
+
       res.json(booking);
     } catch (error: any) {
       console.error('Error creating booking:', error);
@@ -4390,6 +4823,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: req.body.description,
         tags: req.body.tags || [],
       });
+      
       res.json(gallery);
     } catch (error: any) {
       console.error('Error creating gallery:', error);

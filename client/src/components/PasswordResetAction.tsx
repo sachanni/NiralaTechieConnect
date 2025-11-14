@@ -7,6 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import { EmailPasswordAuthService } from "@/lib/firebase";
 import { Lock, CheckCircle, AlertCircle, Home, LogIn } from "lucide-react";
 import { useLocation } from "wouter";
+import PasswordInputWithValidation from "./PasswordInputWithValidation";
+import { evaluatePassword } from "@/lib/passwordValidation";
 
 export default function PasswordResetAction() {
   const [, setLocation] = useLocation();
@@ -94,10 +96,11 @@ export default function PasswordResetAction() {
       return;
     }
 
-    if (newPassword.length < 6) {
+    const passwordValidation = evaluatePassword(newPassword);
+    if (!passwordValidation.isValid) {
       toast({
-        title: "Password Too Short",
-        description: "Password must be at least 6 characters long",
+        title: "Weak Password",
+        description: "Please ensure your password meets all security requirements",
         variant: "destructive",
       });
       return;
@@ -236,21 +239,12 @@ export default function PasswordResetAction() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="new-password">New Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                <Input
-                  id="new-password"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new password (min. 6 characters)"
-                  className="h-12 pl-10"
-                  required
-                  minLength={6}
-                  autoComplete="new-password"
-                  autoFocus
-                />
-              </div>
+              <PasswordInputWithValidation
+                value={newPassword}
+                onChange={setNewPassword}
+                id="new-password"
+                placeholder="Create a secure password"
+              />
             </div>
 
             <div className="space-y-2">
@@ -278,17 +272,10 @@ export default function PasswordResetAction() {
               </p>
             )}
 
-            {newPassword && newPassword.length > 0 && newPassword.length < 6 && (
-              <p className="text-sm text-amber-600 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" />
-                Password must be at least 6 characters
-              </p>
-            )}
-
             <Button
               type="submit"
               className="w-full h-12 text-base font-semibold"
-              disabled={loading || !newPassword || !confirmPassword || newPassword !== confirmPassword || newPassword.length < 6}
+              disabled={loading || !evaluatePassword(newPassword).isValid || newPassword !== confirmPassword}
             >
               {loading ? (
                 <>

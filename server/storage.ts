@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type MessageReaction, type InsertMessageReaction, type ReadReceipt, type InsertReadReceipt, type Job, type InsertJob, type JobApplication, type InsertJobApplication, type Idea, type InsertIdea, type IdeaInterest, type InsertIdeaInterest, type IdeaUpvote, type InsertIdeaUpvote, type IdeaComment, type InsertIdeaComment, type IdeaTeamApplication, type InsertIdeaTeamApplication, type SkillSwapSession, type InsertSkillSwapSession, type SkillSwapReview, type InsertSkillSwapReview, type Broadcast, type InsertBroadcast, type BroadcastView, type InsertBroadcastView, type AdminAction, type InsertAdminAction, type Event, type InsertEvent, type EventRsvp, type InsertEventRsvp, type EventCheckin, type InsertEventCheckin, type ForumCategory, type InsertForumCategory, type ForumPost, type InsertForumPost, type ForumReply, type InsertForumReply, type ForumVote, type InsertForumVote, type ForumReport, type InsertForumReport, type LostAndFound, type InsertLostAndFound, type CommunityAnnouncement, type InsertCommunityAnnouncement, users, conversations, messages, messageReactions, readReceipts, jobs, jobApplications, ideas, ideaInterests, ideaUpvotes, ideaComments, ideaTeamApplications, skillSwapSessions, skillSwapReviews, broadcasts, broadcastViews, adminActions, events, eventRsvps, eventCheckins, forumCategories, forumPosts, forumReplies, forumVotes, forumReports, lostAndFound, communityAnnouncements, activityFeed, activityLikes, galleries, galleryImages, galleryLikes, userPresence, marketplaceItems, marketplaceOffers, marketplaceFavorites, marketplaceReviews, rentalItems, rentalBookings, rentalReviews, rentalFavorites, advertisements, adPayments, adAnalytics } from "@shared/schema";
+import { type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type MessageReaction, type InsertMessageReaction, type ReadReceipt, type InsertReadReceipt, type Notification, type InsertNotification, type NotificationPreference, type InsertNotificationPreference, type UserCategoryInterest, type InsertUserCategoryInterest, type Job, type InsertJob, type JobApplication, type InsertJobApplication, type Idea, type InsertIdea, type IdeaInterest, type InsertIdeaInterest, type IdeaUpvote, type InsertIdeaUpvote, type IdeaComment, type InsertIdeaComment, type IdeaTeamApplication, type InsertIdeaTeamApplication, type SkillSwapSession, type InsertSkillSwapSession, type SkillSwapReview, type InsertSkillSwapReview, type Broadcast, type InsertBroadcast, type BroadcastView, type InsertBroadcastView, type AdminAction, type InsertAdminAction, type Event, type InsertEvent, type EventRsvp, type InsertEventRsvp, type EventCheckin, type InsertEventCheckin, type ForumCategory, type InsertForumCategory, type ForumPost, type InsertForumPost, type ForumReply, type InsertForumReply, type ForumVote, type InsertForumVote, type ForumReport, type InsertForumReport, type LostAndFound, type InsertLostAndFound, type CommunityAnnouncement, type InsertCommunityAnnouncement, type UserService, type InsertUserService, users, conversations, messages, messageReactions, readReceipts, notifications, notificationPreferences, userCategoryInterests, jobs, jobApplications, ideas, ideaInterests, ideaUpvotes, ideaComments, ideaTeamApplications, skillSwapSessions, skillSwapReviews, broadcasts, broadcastViews, adminActions, events, eventRsvps, eventCheckins, forumCategories, forumPosts, forumReplies, forumVotes, forumReports, lostAndFound, communityAnnouncements, activityFeed, activityLikes, galleries, galleryImages, galleryLikes, userPresence, userServices, marketplaceItems, marketplaceOffers, marketplaceFavorites, marketplaceReviews, rentalItems, rentalBookings, rentalReviews, rentalFavorites, advertisements, adPayments, adAnalytics } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { eq, and, gte, lte, like, ilike, sql, or, desc, ne } from "drizzle-orm";
@@ -34,6 +34,14 @@ export interface IStorage {
   getMessageReactions(messageId: string): Promise<MessageReaction[]>;
   updateReadReceipt(conversationId: string, userId: string, lastReadMessageId?: string): Promise<void>;
   getReadReceipts(conversationId: string, userId: string): Promise<ReadReceipt[]>;
+  
+  getUnreadNotificationCount(userId: string): Promise<number>;
+  getNotifications(userId: string, limit?: number): Promise<Notification[]>;
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  markNotificationAsRead(notificationId: string, userId: string): Promise<void>;
+  markAllNotificationsAsRead(userId: string): Promise<void>;
+  getNotificationPreferences(userId: string): Promise<NotificationPreference[]>;
+  updateNotificationPreferences(userId: string, preferences: Partial<NotificationPreference>[]): Promise<void>;
   
   createJob(job: InsertJob): Promise<Job>;
   getAllJobs(): Promise<Array<Job & { poster: User }>>;
@@ -82,6 +90,8 @@ export interface IStorage {
   updateUserSkills(userId: string, skillsToTeach: string[], skillsToLearn: string[]): Promise<User>;
   updateUserSettings(userId: string, settings: Partial<Pick<User, 'isActive' | 'profileVisibility' | 'allowMessages' | 'showEmail' | 'showPhone' | 'notificationPreferences'>>): Promise<User>;
   getUserSettings(userId: string): Promise<Pick<User, 'isActive' | 'profileVisibility' | 'allowMessages' | 'showEmail' | 'showPhone' | 'notificationPreferences'>>;
+  getUserServices(userId: string): Promise<UserService[]>;
+  setUserServices(userId: string, services: Array<{serviceId: string; categoryId: string; roleType: string}>): Promise<void>;
   findMentors(userId: string, skillToLearn?: string): Promise<User[]>;
   createSkillSwapSession(session: InsertSkillSwapSession): Promise<SkillSwapSession>;
   getUserSessions(userId: string): Promise<Array<SkillSwapSession & { mentor: User; learner: User }>>;
@@ -1552,8 +1562,9 @@ export class PostgresStorage implements IStorage {
     if (roleFilter) {
       // Check if categoryRoles jsonb contains the role in the category's array
       // categoryRoles format: {"categoryId": ["provider", "seeker"]}
+      const pattern = `%${roleFilter}%`;
       conditions.push(
-        sql`${users.categoryRoles}->>${categoryId} LIKE '%${roleFilter}%'`
+        sql`${users.categoryRoles}->>${categoryId} LIKE ${pattern}`
       );
     }
 
@@ -1853,6 +1864,115 @@ export class PostgresStorage implements IStorage {
       .select()
       .from(readReceipts)
       .where(eq(readReceipts.conversationId, conversationId));
+  }
+
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.userId, userId),
+          sql`${notifications.readAt} IS NULL`
+        )
+      );
+    
+    return Number(result[0]?.count || 0);
+  }
+
+  async getNotifications(userId: string, limit: number = 20): Promise<Notification[]> {
+    return await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit);
+  }
+
+  async createNotification(insertNotification: InsertNotification): Promise<Notification> {
+    const result = await db
+      .insert(notifications)
+      .values(insertNotification)
+      .returning();
+    
+    return result[0];
+  }
+
+  async markNotificationAsRead(notificationId: string, userId: string): Promise<void> {
+    await db
+      .update(notifications)
+      .set({ readAt: new Date() })
+      .where(
+        and(
+          eq(notifications.id, notificationId),
+          eq(notifications.userId, userId)
+        )
+      );
+  }
+
+  async markAllNotificationsAsRead(userId: string): Promise<void> {
+    await db
+      .update(notifications)
+      .set({ readAt: new Date() })
+      .where(
+        and(
+          eq(notifications.userId, userId),
+          sql`${notifications.readAt} IS NULL`
+        )
+      );
+  }
+
+  async getNotificationPreferences(userId: string): Promise<NotificationPreference[]> {
+    const prefs = await db
+      .select()
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.userId, userId))
+      .orderBy(notificationPreferences.category);
+    
+    // Convert integer flags to booleans for API consistency
+    return prefs.map(p => ({
+      ...p,
+      inAppEnabled: p.inAppEnabled === 1,
+      emailEnabled: p.emailEnabled === 1,
+    })) as NotificationPreference[];
+  }
+
+  async updateNotificationPreferences(userId: string, preferences: Partial<NotificationPreference>[]): Promise<void> {
+    for (const pref of preferences) {
+      if (!pref.id) continue;
+      
+      const updates: any = {};
+      if (pref.inAppEnabled !== undefined) {
+        if (typeof pref.inAppEnabled !== 'boolean') {
+          throw new Error('inAppEnabled must be a boolean');
+        }
+        updates.inAppEnabled = pref.inAppEnabled ? 1 : 0;
+      }
+      if (pref.emailEnabled !== undefined) {
+        if (typeof pref.emailEnabled !== 'boolean') {
+          throw new Error('emailEnabled must be a boolean');
+        }
+        updates.emailEnabled = pref.emailEnabled ? 1 : 0;
+      }
+      if (pref.emailFrequency !== undefined) {
+        const validFrequencies = ['instant', 'daily', 'weekly', 'digest'];
+        if (!validFrequencies.includes(pref.emailFrequency)) {
+          throw new Error(`emailFrequency must be one of: ${validFrequencies.join(', ')}`);
+        }
+        updates.emailFrequency = pref.emailFrequency;
+      }
+      
+      // CRITICAL: Only update preferences that belong to this user
+      await db
+        .update(notificationPreferences)
+        .set(updates)
+        .where(
+          and(
+            eq(notificationPreferences.id, pref.id),
+            eq(notificationPreferences.userId, userId)
+          )
+        );
+    }
   }
 
   async createJob(insertJob: InsertJob): Promise<Job> {
@@ -2515,6 +2635,37 @@ export class PostgresStorage implements IStorage {
     }
 
     return result[0];
+  }
+
+  async getUserServices(userId: string): Promise<UserService[]> {
+    const result = await db
+      .select()
+      .from(userServices)
+      .where(eq(userServices.userId, userId));
+
+    return result;
+  }
+
+  async setUserServices(userId: string, services: Array<{serviceId: string; categoryId: string; roleType: string}>): Promise<void> {
+    // Wrap delete + insert in a transaction for atomicity
+    await db.transaction(async (tx) => {
+      // Delete existing services for this user
+      await tx
+        .delete(userServices)
+        .where(eq(userServices.userId, userId));
+
+      // Insert new services
+      if (services.length > 0) {
+        const servicesToInsert = services.map(service => ({
+          userId,
+          serviceId: service.serviceId,
+          categoryId: service.categoryId,
+          roleType: service.roleType,
+        }));
+
+        await tx.insert(userServices).values(servicesToInsert);
+      }
+    });
   }
 
   async completeOnboarding(userId: string): Promise<User> {
@@ -4453,7 +4604,27 @@ export class PostgresStorage implements IStorage {
       .orderBy(desc(galleries.createdAt));
 
     const result = await query;
-    return result;
+    
+    // Fetch cover image (first image) for each gallery
+    const galleriesWithCoverImages = await Promise.all(
+      result.map(async (gallery) => {
+        const coverImage = await db
+          .select({
+            imageUrl: galleryImages.imageUrl,
+          })
+          .from(galleryImages)
+          .where(eq(galleryImages.galleryId, gallery.id))
+          .orderBy(galleryImages.sortOrder)
+          .limit(1);
+
+        return {
+          ...gallery,
+          coverImage: coverImage.length > 0 ? coverImage[0] : null,
+        };
+      })
+    );
+
+    return galleriesWithCoverImages;
   }
 
   async getGallery(galleryId: string): Promise<any> {
@@ -4943,21 +5114,19 @@ export class PostgresStorage implements IStorage {
           profilePhotoUrl: users.profilePhotoUrl,
           flatNumber: users.flatNumber,
         },
-        itemName: rentalItems.itemName,
+        title: rentalItems.title,
         description: rentalItems.description,
         category: rentalItems.category,
         condition: rentalItems.condition,
         images: rentalItems.images,
         rentalPrice: rentalItems.rentalPrice,
-        priceUnit: rentalItems.priceUnit,
-        deposit: rentalItems.deposit,
-        minRentalDuration: rentalItems.minRentalDuration,
-        maxRentalDuration: rentalItems.maxRentalDuration,
+        securityDeposit: rentalItems.securityDeposit,
+        pickupLocation: rentalItems.pickupLocation,
         location: rentalItems.location,
         availability: rentalItems.availability,
-        favoriteCount: rentalItems.favoriteCount,
-        totalRentals: rentalItems.totalRentals,
-        averageRating: rentalItems.averageRating,
+        totalBookings: rentalItems.totalBookings,
+        rating: rentalItems.rating,
+        reviewCount: rentalItems.reviewCount,
         createdAt: rentalItems.createdAt,
       })
       .from(rentalItems)
@@ -4992,7 +5161,7 @@ export class PostgresStorage implements IStorage {
     if (filters.searchQuery) {
       conditions.push(
         or(
-          ilike(rentalItems.itemName, `%${filters.searchQuery}%`),
+          ilike(rentalItems.title, `%${filters.searchQuery}%`),
           ilike(rentalItems.description, `%${filters.searchQuery}%`)
         )!
       );
@@ -5025,21 +5194,20 @@ export class PostgresStorage implements IStorage {
           flatNumber: users.flatNumber,
           phoneNumber: users.phoneNumber,
         },
-        itemName: rentalItems.itemName,
+        title: rentalItems.title,
         description: rentalItems.description,
         category: rentalItems.category,
         condition: rentalItems.condition,
         images: rentalItems.images,
         rentalPrice: rentalItems.rentalPrice,
-        priceUnit: rentalItems.priceUnit,
-        deposit: rentalItems.deposit,
-        minRentalDuration: rentalItems.minRentalDuration,
-        maxRentalDuration: rentalItems.maxRentalDuration,
+        securityDeposit: rentalItems.securityDeposit,
+        pickupLocation: rentalItems.pickupLocation,
         location: rentalItems.location,
         availability: rentalItems.availability,
-        favoriteCount: rentalItems.favoriteCount,
-        totalRentals: rentalItems.totalRentals,
-        averageRating: rentalItems.averageRating,
+        totalBookings: rentalItems.totalBookings,
+        rating: rentalItems.rating,
+        reviewCount: rentalItems.reviewCount,
+        viewCount: rentalItems.viewCount,
         createdAt: rentalItems.createdAt,
       })
       .from(rentalItems)
