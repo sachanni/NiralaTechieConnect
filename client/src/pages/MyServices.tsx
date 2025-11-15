@@ -220,17 +220,18 @@ export default function MyServices({ userId, idToken }: MyServicesProps) {
     const existing = newSelections.get(serviceId);
     
     if (existing) {
-      if (role === 'provider') {
-        existing.isProvider = !existing.isProvider;
-      } else {
-        existing.isSeeker = !existing.isSeeker;
-      }
-      
-      // Remove if neither role is selected
-      if (!existing.isProvider && !existing.isSeeker) {
+      // If clicking the same role that's already selected, deselect it
+      if (role === 'provider' && existing.isProvider) {
         newSelections.delete(serviceId);
+      } else if (role === 'seeker' && existing.isSeeker) {
+        newSelections.delete(serviceId);
+      } else {
+        // Switch to the new role (mutually exclusive)
+        existing.isProvider = role === 'provider';
+        existing.isSeeker = role === 'seeker';
       }
     } else {
+      // New selection
       newSelections.set(serviceId, {
         serviceId,
         categoryId,
@@ -331,7 +332,7 @@ export default function MyServices({ userId, idToken }: MyServicesProps) {
             </Button>
           </div>
           <p className="text-sm md:text-base text-muted-foreground">
-            Select the services you offer or need. You can be both a provider and seeker for any service.
+            Select the services you offer or need. Choose one role per service - you can either offer or seek a service, not both.
           </p>
           <div className="mt-3 md:mt-4 flex items-center gap-2">
             <Badge variant="secondary" className="text-xs md:text-sm">

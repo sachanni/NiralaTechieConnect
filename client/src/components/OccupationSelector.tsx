@@ -46,8 +46,8 @@ export default function OccupationSelector({
   onOrganizationNameChange,
 }: OccupationSelectorProps) {
   // Extract custom occupation if occupation starts with "other:"
-  const isOtherOccupation = occupation === 'other' || occupation.startsWith('other:');
-  const customOccupationValue = occupation.startsWith('other:') ? occupation.replace('other:', '') : '';
+  const isOtherOccupation = occupation === 'other' || (occupation && occupation.startsWith('other:'));
+  const customOccupationValue = (occupation && occupation.startsWith('other:')) ? occupation.replace('other:', '') : '';
   
   const [otherOccupation, setOtherOccupation] = useState(customOccupationValue);
 

@@ -14,8 +14,8 @@ export const users = pgTable("users", {
   societyName: text("society_name").notNull().default('Nirala Estate'),
   residencyType: text("residency_type"),
   residentSince: text("resident_since"),
-  serviceCategories: text("service_categories").array().notNull().default(sql`ARRAY[]::text[]`),
-  categoryRoles: jsonb("category_roles").notNull().default(sql`'{}'::jsonb`).$type<Record<string, ('provider' | 'seeker')[]>>(),
+  serviceCategories: text("service_categories").array().default(sql`ARRAY[]::text[]`),
+  categoryRoles: jsonb("category_roles").default(sql`'{}'::jsonb`).$type<Record<string, ('provider' | 'seeker')[]>>(),
   occupation: text("occupation"),
   employmentStatus: text("employment_status"),
   briefIntro: text("brief_intro"),
@@ -496,6 +496,24 @@ export type EventRsvp = typeof eventRsvps.$inferSelect;
 export type InsertEventCheckin = z.infer<typeof insertEventCheckinSchema>;
 export type EventCheckin = typeof eventCheckins.$inferSelect;
 
+export const eventFeedback = pgTable("event_feedback", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventId: varchar("event_id").notNull().references(() => events.id),
+  attendeeName: text("attendee_name").notNull(),
+  attendeeEmail: text("attendee_email"),
+  rating: integer("rating").notNull(),
+  comments: text("comments"),
+  submittedAt: timestamp("submitted_at").notNull().defaultNow(),
+});
+
+export const insertEventFeedbackSchema = createInsertSchema(eventFeedback).omit({
+  id: true,
+  submittedAt: true,
+});
+
+export type InsertEventFeedback = z.infer<typeof insertEventFeedbackSchema>;
+export type EventFeedback = typeof eventFeedback.$inferSelect;
+
 export const forumCategories = pgTable("forum_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull().unique(),
@@ -717,6 +735,7 @@ export const activityFeed = pgTable("activity_feed", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
   activityType: text("activity_type").notNull(),
+  activityCategory: text("activity_category"),
   targetType: text("target_type").notNull(),
   targetId: varchar("target_id").notNull(),
   content: text("content").notNull(),
@@ -729,6 +748,29 @@ export const activityLikes = pgTable("activity_likes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   activityId: varchar("activity_id").notNull().references(() => activityFeed.id),
   userId: varchar("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const userFollows = pgTable("user_follows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  followerId: varchar("follower_id").notNull().references(() => users.id),
+  followeeId: varchar("followee_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const activityInterestTopics = pgTable("activity_interest_topics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  slug: text("slug").notNull().unique(),
+  label: text("label").notNull(),
+  description: text("description"),
+  allowedActivityTypes: jsonb("allowed_activity_types").notNull().default(sql`'[]'::jsonb`).$type<string[]>(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const userActivityInterests = pgTable("user_activity_interests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  interestId: varchar("interest_id").notNull().references(() => activityInterestTopics.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -828,6 +870,21 @@ export const insertActivityLikeSchema = createInsertSchema(activityLikes).omit({
   createdAt: true,
 });
 
+export const insertUserFollowSchema = createInsertSchema(userFollows).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertActivityInterestTopicSchema = createInsertSchema(activityInterestTopics).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUserActivityInterestSchema = createInsertSchema(userActivityInterests).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertServiceRatingSchema = createInsertSchema(serviceRatings).omit({
   id: true,
   createdAt: true,
@@ -914,6 +971,12 @@ export type InsertActivityFeed = z.infer<typeof insertActivityFeedSchema>;
 export type ActivityFeed = typeof activityFeed.$inferSelect;
 export type InsertActivityLike = z.infer<typeof insertActivityLikeSchema>;
 export type ActivityLike = typeof activityLikes.$inferSelect;
+export type InsertUserFollow = z.infer<typeof insertUserFollowSchema>;
+export type UserFollow = typeof userFollows.$inferSelect;
+export type InsertActivityInterestTopic = z.infer<typeof insertActivityInterestTopicSchema>;
+export type ActivityInterestTopic = typeof activityInterestTopics.$inferSelect;
+export type InsertUserActivityInterest = z.infer<typeof insertUserActivityInterestSchema>;
+export type UserActivityInterest = typeof userActivityInterests.$inferSelect;
 export type InsertServiceRating = z.infer<typeof insertServiceRatingSchema>;
 export type ServiceRating = typeof serviceRatings.$inferSelect;
 export type InsertUserPresence = z.infer<typeof insertUserPresenceSchema>;

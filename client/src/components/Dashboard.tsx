@@ -14,14 +14,32 @@ import UserProfileSidebar from "./UserProfileSidebar";
 import SuggestionsSidebar from "./SuggestionsSidebar";
 import ActivityFeedItem from "./ActivityFeedItem";
 import NotificationDropdown from "./NotificationDropdown";
+import ProfileCompletionIndicator from "./ProfileCompletionIndicator";
 import { Skeleton } from "./ui/skeleton";
 
 interface DashboardProps {
   user: {
     fullName: string;
+    email: string;
+    flatNumber: string;
     profilePhotoUrl?: string;
     points?: number;
     badges?: string[];
+    dateOfBirth?: string;
+    towerName?: string;
+    bio?: string;
+    occupation?: string;
+    employmentStatus?: string;
+    company?: string;
+    yearsOfExperience?: number;
+    briefIntro?: string;
+    professionalWebsite?: string;
+    serviceCategories?: string[];
+    categoryRoles?: Record<string, string[]>;
+    techStack?: string[];
+    certifications?: string;
+    linkedinUrl?: string;
+    githubUrl?: string;
   };
   userId: string;
   idToken: string;
@@ -94,16 +112,28 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
 
   const handleLogout = async () => {
     try {
-      const { getAuth, signOut } = await import('firebase/auth');
-      const auth = getAuth();
-      await signOut(auth);
+      // Clear JWT tokens (email/password login)
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('user');
       
+      // Clear Firebase tokens (phone OTP login)
       localStorage.removeItem('idToken');
       localStorage.removeItem('userData');
+      
+      // Try to sign out from Firebase (if user was logged in via phone OTP)
+      try {
+        const { getAuth, signOut } = await import('firebase/auth');
+        const auth = getAuth();
+        await signOut(auth);
+      } catch (firebaseError) {
+        // Ignore Firebase signout errors (user might not be logged in via Firebase)
+      }
       
       window.location.href = '/';
     } catch (error) {
       console.error('Logout error:', error);
+      // Force redirect even if there's an error
+      window.location.href = '/';
     }
   };
 
@@ -195,7 +225,10 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
 
   const activities = activityData?.activities || [];
   const neighbors = usersData?.users?.slice(0, 5) || [];
-  const servicesCount = servicesData?.services?.length || 0;
+  // Count unique services (not total records, since one service can have both provider and seeker roles)
+  const servicesCount = servicesData?.services 
+    ? new Set(servicesData.services.map((s: any) => s.serviceId)).size 
+    : 0;
   const upcomingEvents = eventsData?.events?.filter((e: any) => {
     try {
       return new Date(e.eventDate) >= new Date() && e.status === 'upcoming';
@@ -267,7 +300,7 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
           <aside ref={leftSidebarContainerRef} className="lg:col-span-3 hidden lg:block">
             <div 
               ref={leftSidebarRef}
-              className="fixed top-[88px] overflow-y-auto"
+              className="fixed top-[88px] overflow-y-auto space-y-4"
               style={{ 
                 left: `${leftSidebarLeft || 0}px`, 
                 width: `${leftSidebarWidth || 0}px`,
@@ -275,6 +308,7 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
               }}
             >
               <UserProfileSidebar user={user} stats={userStats} />
+              <ProfileCompletionIndicator user={user} compact showDetails={false} />
             </div>
           </aside>
 

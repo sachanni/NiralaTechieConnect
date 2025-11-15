@@ -22,6 +22,7 @@ interface User {
 interface OnboardingWizardProps {
   open: boolean;
   onComplete: () => void;
+  onDefer?: () => void;
   userId: string;
   idToken: string;
 }
@@ -37,7 +38,7 @@ const availableSkills = [
   "Event Planning", "Birthday Parties", "Decoration Services", "Photography"
 ];
 
-export default function OnboardingWizard({ open, onComplete, userId, idToken }: OnboardingWizardProps) {
+export default function OnboardingWizard({ open, onComplete, onDefer, userId, idToken }: OnboardingWizardProps) {
   const [step, setStep] = useState(1);
   const [selectedTeach, setSelectedTeach] = useState<string[]>([]);
   const [selectedLearn, setSelectedLearn] = useState<string[]>([]);
@@ -114,6 +115,12 @@ export default function OnboardingWizard({ open, onComplete, userId, idToken }: 
     }
     if (step < 3) {
       setStep(step + 1);
+    }
+  };
+
+  const handleDeferOnboarding = () => {
+    if (onDefer) {
+      onDefer();
     }
   };
 
@@ -350,38 +357,49 @@ export default function OnboardingWizard({ open, onComplete, userId, idToken }: 
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-3 mt-6">
-          <Button
-            variant="ghost"
-            onClick={handleSkip}
-            disabled={completeOnboardingMutation.isPending}
-          >
-            {step === 3 ? 'Skip for now' : 'Skip'}
-          </Button>
-          <div className="flex items-center gap-2">
-            {step > 1 && (
-              <Button
-                variant="outline"
-                onClick={() => setStep(step - 1)}
-                disabled={completeOnboardingMutation.isPending}
-              >
-                Back
-              </Button>
-            )}
+        <div className="space-y-3 mt-6">
+          <div className="flex items-center justify-between gap-3">
             <Button
-              onClick={step === 3 ? handleComplete : handleNext}
-              disabled={updateSkillsMutation.isPending || completeOnboardingMutation.isPending}
+              variant="ghost"
+              onClick={handleSkip}
+              disabled={completeOnboardingMutation.isPending}
             >
-              {step === 3 ? (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
-                  Get Started
-                </>
-              ) : (
-                'Next'
-              )}
+              {step === 3 ? 'Skip' : 'Skip This Step'}
             </Button>
+            <div className="flex items-center gap-2">
+              {step > 1 && (
+                <Button
+                  variant="outline"
+                  onClick={() => setStep(step - 1)}
+                  disabled={completeOnboardingMutation.isPending}
+                >
+                  Back
+                </Button>
+              )}
+              <Button
+                onClick={step === 3 ? handleComplete : handleNext}
+                disabled={updateSkillsMutation.isPending || completeOnboardingMutation.isPending}
+              >
+                {step === 3 ? (
+                  <>
+                    <Check className="w-4 h-4 mr-2" />
+                    Get Started
+                  </>
+                ) : (
+                  'Next'
+                )}
+              </Button>
+            </div>
           </div>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleDeferOnboarding}
+            disabled={completeOnboardingMutation.isPending}
+            data-testid="button-complete-later"
+          >
+            I'll Complete This Later
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

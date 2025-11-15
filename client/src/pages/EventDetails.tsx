@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +8,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Calendar, 
   Clock, 
@@ -19,12 +27,16 @@ import {
   MessageCircle,
   CalendarDays,
   CheckCircle2,
-  XCircle
+  XCircle,
+  MessageSquareQuote,
+  Download,
+  ExternalLink
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { useChat } from "@/contexts/ChatContext";
+import QRCodeGenerator from "qrcode";
 
 interface User {
   id: string;
@@ -68,10 +80,13 @@ interface EventDetailsProps {
 
 export default function EventDetails({ userId, idToken }: EventDetailsProps = {}) {
   const [, params] = useRoute("/events/:id");
-  const [, setLocation] = useLocation();
+  const [, navigate] = useLocation();
   const eventId = params?.id;
   const { toast } = useToast();
   const { openChat } = useChat();
+  const [showFeedbackQR, setShowFeedbackQR] = useState(false);
+  const [feedbackQRCode, setFeedbackQRCode] = useState<string>("");
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const { data: eventData, isLoading: eventLoading, error: eventError } = useQuery<{ event: Event }>({
     queryKey: [`/api/events/${eventId}`],
@@ -245,19 +260,52 @@ export default function EventDetails({ userId, idToken }: EventDetailsProps = {}
   };
 
   const handleViewQRCode = () => {
-    setLocation(`/events/${eventId}/qr-code`);
+    navigate(`/events/${eventId}/qr-code`);
   };
 
   const handleScanQRCodes = () => {
-    setLocation(`/events/${eventId}/scan`);
+    navigate(`/events/${eventId}/scan`);
   };
 
   const handleViewAttendees = () => {
-    setLocation(`/events/${eventId}/attendees`);
+    navigate(`/events/${eventId}/attendees`);
   };
 
   const handleEditEvent = () => {
-    setLocation(`/events/${eventId}/edit`);
+    navigate(`/events/${eventId}/edit`);
+  };
+
+  const handleGenerateFeedbackQR = async () => {
+    try {
+      const feedbackUrl = `${window.location.origin}/feedback/${eventId}`;
+      const qrCodeDataUrl = await QRCodeGenerator.toDataURL(feedbackUrl, {
+        width: 400,
+        margin: 2,
+        color: {
+          dark: '#8b46de',
+          light: '#ffffff',
+        },
+      });
+      setFeedbackQRCode(qrCodeDataUrl);
+      setShowFeedbackQR(true);
+    } catch (error) {
+      toast({
+        title: "QR Generation Failed",
+        description: "Failed to generate QR code",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownloadQR = () => {
+    const link = document.createElement('a');
+    link.download = `feedback-qr-${eventId}.png`;
+    link.href = feedbackQRCode;
+    link.click();
+    toast({
+      title: "QR Code Downloaded",
+      description: "QR code saved successfully",
+    });
   };
 
   if (eventLoading) {
@@ -561,6 +609,24 @@ export default function EventDetails({ userId, idToken }: EventDetailsProps = {}
                     <Edit className="w-4 h-4 mr-2" />
                     Edit Event
                   </Button>
+                  <Button 
+                    className="w-full" 
+                    variant="outline"
+                    onClick={handleGenerateFeedbackQR}
+                    data-testid="button-generate-feedback-qr"
+                  >
+                    <MessageSquareQuote className="w-4 h-4 mr-2" />
+                    Generate Feedback QR
+                  </Button>
+                  <Button 
+                    className="w-full" 
+                    variant="outline"
+                    onClick={() => navigate(`/events/${eventId}/feedback-dashboard`)}
+                    data-testid="button-view-feedback"
+                  >
+                    <MessageSquareQuote className="w-4 h-4 mr-2" />
+                    View Feedback
+                  </Button>
                 </CardContent>
               </Card>
             )}
@@ -578,6 +644,100 @@ export default function EventDetails({ userId, idToken }: EventDetailsProps = {}
           </div>
         </div>
       </div>
+
+      {/* Feedback QR Code Dialog */}
+      <Dialog open={showFeedbackQR} onOpenChange={setShowFeedbackQR}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Event Feedback QR Code</DialogTitle>
+            <DialogDescription>
+              Share this QR code with attendees to collect feedback
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* QR Code Display */}
+            {feedbackQRCode && (
+              <div className="flex flex-col items-center gap-4">
+                <div className="bg-white p-4 rounded-md border">
+                  <img 
+                    src={feedbackQRCode} 
+                    alt="Feedback QR Code" 
+                    className="w-full max-w-sm"
+                  />
+                </div>
+                
+                {/* Feedback URL */}
+                <div className="w-full space-y-2">
+                  <label className="text-sm font-medium">Feedback URL</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      readOnly
+                      value={`${window.location.origin}/feedback/${eventId}`}
+                      className="flex-1 px-3 py-2 text-sm border rounded-md bg-muted"
+                      onClick={(e) => e.currentTarget.select()}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/feedback/${eventId}`);
+                        toast({
+                          title: "Copied!",
+                          description: "URL copied to clipboard",
+                        });
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+
+                {/* URL Shortener Suggestion */}
+                <div className="w-full p-3 bg-primary/5 border border-primary/20 rounded-md">
+                  <div className="flex items-start gap-2">
+                    <ExternalLink className="w-4 h-4 mt-0.5 text-primary flex-shrink-0" />
+                    <div className="text-sm">
+                      <p className="font-medium text-primary mb-1">Pro Tip: Use a URL Shortener</p>
+                      <p className="text-muted-foreground">
+                        For a cleaner look, shorten your URL using{" "}
+                        <a
+                          href="https://bitly.com"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline font-medium"
+                        >
+                          Bit.ly
+                        </a>{" "}
+                        or{" "}
+                        <a
+                          href="https://tinyurl.com"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline font-medium"
+                        >
+                          TinyURL
+                        </a>
+                        , then regenerate this QR code with the short link.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Download Button */}
+                <Button 
+                  onClick={handleDownloadQR} 
+                  className="w-full"
+                  data-testid="button-download-qr"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download QR Code
+                </Button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

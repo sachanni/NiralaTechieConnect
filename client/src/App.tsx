@@ -14,6 +14,7 @@ import PasswordResetAction from "@/components/PasswordResetAction";
 import RegistrationForm, { type RegistrationData } from "@/components/RegistrationForm";
 import Dashboard from "@/components/Dashboard";
 import Profile from "@/pages/Profile";
+import ProfileEdit from "@/pages/ProfileEdit";
 import MyServices from "@/pages/MyServices";
 import Settings from "@/pages/Settings";
 import FindTeammates from "@/pages/FindTeammates";
@@ -56,6 +57,9 @@ import PhotoGallery from "@/pages/PhotoGallery";
 import Marketplace from "@/pages/Marketplace";
 import ToolRental from "@/pages/ToolRental";
 import AdvertiseServices from "@/pages/AdvertiseServices";
+import UserProfile from "@/pages/UserProfile";
+import EventFeedback from "@/pages/EventFeedback";
+import EventFeedbackDashboard from "@/pages/EventFeedbackDashboard";
 import { BroadcastBanner } from "@/components/BroadcastBanner";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ChatProvider } from "@/contexts/ChatContext";
@@ -78,6 +82,7 @@ function Router() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
@@ -85,40 +90,65 @@ function Router() {
   const mode = urlParams.get('mode');
   const oobCode = urlParams.get('oobCode');
 
+  // Sync showOnboarding state with userData
+  useEffect(() => {
+    if (userData && userData.onboardingCompleted === 0) {
+      setShowOnboarding(true);
+    } else {
+      setShowOnboarding(false);
+    }
+  }, [userData]);
+
   if (mode === 'resetPassword' && oobCode) {
     return <PasswordResetAction />;
   }
 
   useEffect(() => {
     const restoreSession = async () => {
-      const storedToken = localStorage.getItem('idToken');
-      const storedUser = localStorage.getItem('userData');
+      const jwtToken = localStorage.getItem('accessToken');
+      const jwtUser = localStorage.getItem('user');
+      const firebaseToken = localStorage.getItem('idToken');
+      const firebaseUser = localStorage.getItem('userData');
       
-      if (storedToken && storedUser) {
+      // Prioritize JWT-based session (email/password login)
+      if (jwtToken && jwtUser) {
         try {
-          const user = JSON.parse(storedUser);
+          const user = JSON.parse(jwtUser);
+          setIdToken(jwtToken);
+          setUserData(user);
+          setAppState('authenticated');
+          setLoading(false);
+          return;
+        } catch (error) {
+          console.error('Error restoring JWT session:', error);
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('user');
+        }
+      }
+      
+      // Fallback to Firebase token (phone OTP login)
+      if (firebaseToken && firebaseUser) {
+        try {
+          const user = JSON.parse(firebaseUser);
           
-          // Verify user still exists in database
+          // Verify Firebase token
           const response = await fetch('/api/auth/verify', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ idToken: storedToken }),
+            body: JSON.stringify({ idToken: firebaseToken }),
           });
 
           if (response.ok) {
             const data = await response.json();
             
             if (data.userExists && data.user) {
-              // User exists in DB - restore session with fresh data
-              setIdToken(storedToken);
+              setIdToken(firebaseToken);
               setUserData(data.user);
               setAppState('authenticated');
-              // Update localStorage with fresh data from DB
               localStorage.setItem('userData', JSON.stringify(data.user));
             } else {
-              // User deleted from DB or doesn't exist
               console.warn('User account no longer exists in database');
               localStorage.removeItem('idToken');
               localStorage.removeItem('userData');
@@ -129,7 +159,6 @@ function Router() {
               });
             }
           } else if (response.status === 403) {
-            // Account suspended
             const errorData = await response.json();
             console.warn('Account suspended:', errorData.details);
             localStorage.removeItem('idToken');
@@ -141,7 +170,6 @@ function Router() {
               duration: 10000,
             });
           } else if (response.status === 401) {
-            // Force logout or token invalid
             const errorData = await response.json().catch(() => ({}));
             console.warn('Session invalidated:', errorData.details || 'Token expired');
             localStorage.removeItem('idToken');
@@ -155,7 +183,6 @@ function Router() {
               });
             }
           } else {
-            // Token invalid or verification failed
             console.warn('Token verification failed');
             localStorage.removeItem('idToken');
             localStorage.removeItem('userData');
@@ -226,50 +253,25 @@ function Router() {
     }
   };
 
-  const handleEmailLoginSuccess = async (token: string) => {
+  const handleEmailLoginSuccess = async (accessToken: string) => {
     setLoading(true);
-    setIdToken(token);
 
     try {
-      const response = await fetch('/api/auth/verify', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ idToken: token }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Verification failed');
-      }
-
-      const data = await response.json();
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
       
-      if (data.userExists && data.user) {
-        setUserData(data.user);
-        setIdToken(token);
-        setAppState('authenticated');
-        localStorage.setItem('idToken', token);
-        localStorage.setItem('userData', JSON.stringify(data.user));
-        setLocation('/dashboard');
-        toast({
-          title: "Welcome back!",
-          description: `Logged in as ${data.user.fullName}`,
-        });
-      } else {
-        // User authenticated with Firebase but no database record exists
-        // For Option 1: Registration requires phone OTP first
-        toast({
-          title: "Registration Required",
-          description: "Please register using phone OTP to create your account. You can use this email during registration.",
-          variant: "default",
-          duration: 6000,
-        });
-        // Clear any stored tokens and go back to landing
-        localStorage.removeItem('idToken');
-        localStorage.removeItem('userData');
-        setAppState('landing');
+      if (!userData || !userData.id) {
+        throw new Error('User data not found');
       }
+
+      setUserData(userData);
+      setIdToken(accessToken);
+      setAppState('authenticated');
+      setLocation('/dashboard');
+      
+      toast({
+        title: "Welcome back!",
+        description: `Logged in as ${userData.fullName}`,
+      });
     } catch (error: any) {
       console.error('Auth verification error:', error);
       toast({
@@ -277,6 +279,8 @@ function Router() {
         description: error.message || "Authentication failed",
         variant: "destructive",
       });
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('user');
       setAppState('landing');
     } finally {
       setLoading(false);
@@ -365,10 +369,31 @@ function Router() {
       const { EmailPasswordAuthService } = await import('@/lib/firebase');
       const emailPasswordService = new EmailPasswordAuthService();
       
-      // Update password in Firebase
+      // Step 1: Update password in Firebase
       await emailPasswordService.updateUserPassword(newPassword);
+      console.log('[Password Reset] Firebase password updated');
       
-      // Sign in with the new password to get a fresh token
+      // Step 2: Update password in PostgreSQL database
+      // This is critical - without this step, email/password login will fail
+      const dbUpdateResponse = await fetch('/api/auth/update-password-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          idToken: idToken,
+          newPassword: newPassword,
+        }),
+      });
+
+      if (!dbUpdateResponse.ok) {
+        const errorData = await dbUpdateResponse.json();
+        throw new Error(errorData.error || 'Failed to update password in database');
+      }
+
+      console.log('[Password Reset] PostgreSQL password updated');
+      
+      // Step 3: Sign in with the new password to get a fresh token
       if (userData && userData.email) {
         const freshToken = await emailPasswordService.signInWithEmail(userData.email, newPassword);
         setIdToken(freshToken);
@@ -379,12 +404,28 @@ function Router() {
         
         toast({
           title: "Password Reset Successful! 🎉",
-          description: "You can now login with your new password.",
+          description: "You can now login with email/password anytime.",
           duration: 5000,
         });
       }
     } catch (error: any) {
       console.error('Password reset error:', error);
+      
+      let errorMessage = "Failed to update password. Please try again.";
+      if (error.message?.includes('database')) {
+        errorMessage = "Password updated in Firebase but not in database. Please contact support.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "Password is too weak. Please use a stronger password.";
+      } else if (error.code === 'auth/requires-recent-login') {
+        errorMessage = "Session expired. Please verify your phone number again.";
+      }
+      
+      toast({
+        title: "Password Reset Failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      
       throw error;
     } finally {
       setLoading(false);
@@ -473,6 +514,9 @@ function Router() {
   if (appState === 'landing' || appState === 'category' || appState === 'email-login' || appState === 'phone' || appState === 'registration' || appState === 'password-reset') {
     return (
       <Switch>
+        {/* Public feedback route - works without authentication */}
+        <Route path="/feedback/:eventId" component={EventFeedback} />
+        
         <Route path="/">
           {appState === 'landing' && <LandingPage onGetStarted={handleGetStarted} />}
           {appState === 'category' && <CategorySelector onContinue={handleCategorySelected} />}
@@ -514,24 +558,36 @@ function Router() {
       const updatedUser = { ...userData, onboardingCompleted: 1 };
       setUserData(updatedUser);
       localStorage.setItem('userData', JSON.stringify(updatedUser));
+      setShowOnboarding(false);
+    };
+
+    const handleOnboardingDefer = () => {
+      setShowOnboarding(false);
     };
 
     return (
       <AuthProvider initialUser={userData} initialToken={idToken}>
         <ChatProvider>
           <BroadcastBanner />
-          <div className="hidden md:block fixed top-4 left-1/2 -translate-x-1/2 z-40 w-full max-w-md px-4">
-            <GlobalSearch idToken={idToken} />
-          </div>
+          {/* Hide search bar on public feedback pages */}
+          {!window.location.pathname.startsWith('/feedback/') && (
+            <div className="hidden md:block fixed top-4 left-1/2 -translate-x-1/2 z-40 w-full max-w-md px-4">
+              <GlobalSearch idToken={idToken} />
+            </div>
+          )}
           <ChatPopupManager />
           <BottomNav />
           <OnboardingWizard
-            open={userData.onboardingCompleted === 0}
+            open={showOnboarding && userData.onboardingCompleted === 0}
             onComplete={handleOnboardingComplete}
+            onDefer={handleOnboardingDefer}
             userId={userData.id}
             idToken={idToken}
           />
           <Switch>
+          {/* Public feedback route - works without authentication */}
+          <Route path="/feedback/:eventId" component={EventFeedback} />
+          
           {/* Admin routes - must be first for proper matching */}
           <Route path="/admin/activity-log">
             <AdminActivityLog />
@@ -604,6 +660,9 @@ function Router() {
           <Route path="/events/:id/attendees">
             <EventAttendees userId={userData.id} idToken={idToken} />
           </Route>
+          <Route path="/events/:eventId/feedback-dashboard">
+            <EventFeedbackDashboard userId={userData.id} idToken={idToken} />
+          </Route>
           <Route path="/events/:id">
             <EventDetails userId={userData.id} idToken={idToken} />
           </Route>
@@ -666,6 +725,15 @@ function Router() {
           </Route>
           
           {/* Other routes */}
+          <Route path="/find-teammates">
+            <FindTeammates userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/profile/edit">
+            <ProfileEdit userId={userData.id} idToken={idToken} />
+          </Route>
+          <Route path="/profile/:userId">
+            <UserProfile userId={userData.id} idToken={idToken} />
+          </Route>
           <Route path="/profile">
             <Profile user={userData} userId={userData.id} idToken={idToken} />
           </Route>
@@ -677,9 +745,6 @@ function Router() {
           </Route>
           <Route path="/dashboard">
             <Dashboard user={userData} userId={userData.id} idToken={idToken} />
-          </Route>
-          <Route path="/find-teammates">
-            <FindTeammates userId={userData.id} idToken={idToken} />
           </Route>
           <Route path="/chat">
             <Chat userId={userData.id} idToken={idToken} />

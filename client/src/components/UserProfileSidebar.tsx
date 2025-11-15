@@ -5,7 +5,7 @@ import { Separator } from "@/components/ui/separator";
 import { 
   Sparkles, Users, Briefcase, TrendingUp, ShoppingCart, 
   Wrench, Search, Camera, Megaphone, MessageCircle, Store,
-  Lightbulb, CalendarDays, MessagesSquare
+  Lightbulb, CalendarDays, MessagesSquare, Calendar
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -40,6 +40,7 @@ export default function UserProfileSidebar({ user, stats }: UserProfileSidebarPr
     { icon: TrendingUp, label: "Skill Swap", path: "/skill-swap" },
     { icon: Lightbulb, label: "Ideas", path: "/ideas" },
     { icon: CalendarDays, label: "Events", path: "/events" },
+    { icon: Calendar, label: "My Events", path: "/my-events" },
     { icon: MessagesSquare, label: "Forum", path: "/forum" },
   ];
 

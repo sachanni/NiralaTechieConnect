@@ -154,7 +154,10 @@ export default function Profile({ user: initialUser, userId, idToken }: ProfileP
     enabled: !!idToken,
   });
 
-  const servicesCount = servicesData?.services?.length || 0;
+  // Count unique services (not total records, since one service can have both provider and seeker roles)
+  const servicesCount = servicesData?.services 
+    ? new Set(servicesData.services.map((s: any) => s.serviceId)).size 
+    : 0;
 
   const getInitials = () => {
     return user.fullName
@@ -228,7 +231,8 @@ export default function Profile({ user: initialUser, userId, idToken }: ProfileP
                       <div className="flex flex-wrap gap-2">
                         <Button 
                           variant="default"
-                          onClick={() => setIsEditProfileModalOpen(true)}
+                          onClick={() => setLocation('/profile/edit')}
+                          data-testid="button-edit-profile"
                         >
                           <Edit className="w-4 h-4 mr-2" />
                           Edit Profile

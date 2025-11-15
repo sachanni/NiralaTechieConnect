@@ -11,6 +11,7 @@ import { Briefcase, ArrowLeft, Building } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { TECH_CATEGORIES, ALL_TECH_OPTIONS } from "@/lib/techStack";
+import { queryClient } from "@/lib/queryClient";
 
 interface PostJobProps {
   idToken: string;
@@ -64,6 +65,10 @@ export default function PostJob({ idToken }: PostJobProps) {
       return response.json();
     },
     onSuccess: () => {
+      // Invalidate job-related queries to update counts and lists
+      queryClient.invalidateQueries({ queryKey: ['myJobsCount'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/jobs'] });
+      
       toast({
         title: "Job Posted!",
         description: "Your job has been posted successfully.",

@@ -135,7 +135,7 @@ export default function MyEvents({ userId, idToken }: MyEventsProps) {
 
     return (
       <Card key={rsvp.id} className="hover-elevate overflow-hidden">
-        <div className="relative h-40 w-full overflow-hidden">
+        <div className="relative h-56 w-full overflow-hidden">
           {event.imageUrl ? (
             <img 
               src={event.imageUrl} 

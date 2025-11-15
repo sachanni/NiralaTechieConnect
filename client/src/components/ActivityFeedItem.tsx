@@ -210,11 +210,11 @@ export default function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
             <p className="text-sm text-muted-foreground line-clamp-3">{activity.description}</p>
 
             {(activity.type === 'event' || activity.type === 'gallery') && activity.metadata?.imageUrl && (
-              <div className="mt-3 rounded-lg overflow-hidden">
+              <div className="mt-3 rounded-lg overflow-hidden bg-gray-50">
                 <img 
                   src={activity.metadata.imageUrl} 
                   alt={activity.title}
-                  className="w-full h-auto max-h-96 object-cover"
+                  className="w-full h-auto max-h-96 object-contain"
                 />
               </div>
             )}

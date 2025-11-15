@@ -1,6 +1,10 @@
 import admin from 'firebase-admin';
 
-if (!admin.apps.length) {
+let initialized = false;
+
+function initializeFirebase() {
+  if (initialized) return;
+  
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
   
   if (!serviceAccountJson) {
@@ -12,16 +16,23 @@ if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
+    initialized = true;
   } catch (error) {
     console.error('Failed to initialize Firebase Admin:', error);
     throw new Error('Invalid Firebase service account credentials');
   }
 }
 
-export const auth = admin.auth();
+function getAuth() {
+  if (!initialized) {
+    initializeFirebase();
+  }
+  return admin.auth();
+}
 
 export async function verifyIdToken(idToken: string) {
   try {
+    const auth = getAuth();
     const decodedToken = await auth.verifyIdToken(idToken);
     return decodedToken;
   } catch (error) {
@@ -49,21 +60,3 @@ export async function getUserIdentifierFromToken(idToken: string): Promise<{ typ
   }
 }
 
-export async function updateUserPassword(userId: string, newPassword: string, email?: string): Promise<void> {
-  try {
-    const updateData: admin.auth.UpdateRequest = {
-      password: newPassword
-    };
-    
-    // If email is provided, set it in Firebase Auth (enables email/password login)
-    if (email) {
-      updateData.email = email;
-      updateData.emailVerified = true; // Mark as verified since they proved ownership via reset token
-    }
-    
-    await auth.updateUser(userId, updateData);
-  } catch (error) {
-    console.error('Failed to update password:', error);
-    throw new Error('Failed to update password');
-  }
-}

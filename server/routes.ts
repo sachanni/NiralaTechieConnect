@@ -4,10 +4,10 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { getPhoneNumberFromToken, getUserIdentifierFromToken, verifyIdToken } from "./firebase-admin";
-import { insertUserSchema, insertMessageSchema } from "@shared/schema";
+import { insertUserSchema, insertMessageSchema, insertEventFeedbackSchema } from "@shared/schema";
 import { createRazorpayOrder, verifyRazorpaySignature, getRazorpayKeyId } from "./razorpay";
 import { sendPasswordResetEmail, sendWelcomeEmail } from "./lib/sendgrid";
-import { setPasswordResetToken, getUserByPasswordResetToken, clearPasswordResetToken, getActivityFeed, incrementFailedLoginAttempts, lockUserAccount, resetFailedLoginAttempts } from "./storage-methods";
+import { setPasswordResetToken, getUserByPasswordResetToken, clearPasswordResetToken, updateUserPassword, getActivityFeed, incrementFailedLoginAttempts, lockUserAccount, resetFailedLoginAttempts } from "./storage-methods";
 import { hashPassword, verifyPassword, validateEmail, validatePassword, generateAccessToken, generateRefreshToken, verifyToken, isAccountLocked, MAX_LOGIN_ATTEMPTS, LOCKOUT_DURATION_MINUTES, calculateLockoutUntil } from "./auth-utils";
 import { notificationHelper } from "./notification-helper";
 import { NOTIFICATION_TYPES } from "./notification-types";
@@ -573,65 +573,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('[Password Reset] Attempting to reset password for user:', {
         userId: user.id,
-        email: user.email,
-        phoneNumber: user.phoneNumber
+        email: user.email
       });
 
-      if (!user.email) {
-        return res.status(400).json({ 
-          error: "Email is required for password reset" 
-        });
-      }
-
-      const admin = await import('./firebase-admin');
-      
-      // Look up Firebase user by EMAIL (not database ID, in case of UID mismatch)
-      let firebaseUid: string;
-      try {
-        const firebaseUser = await admin.auth.getUserByEmail(user.email);
-        firebaseUid = firebaseUser.uid;
-        console.log('[Password Reset] Found Firebase user by email:', {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          phoneNumber: firebaseUser.phoneNumber,
-          providers: firebaseUser.providerData.map(p => p.providerId)
-        });
-      } catch (lookupError: any) {
-        if (lookupError.code === 'auth/user-not-found') {
-          // User doesn't exist in Firebase - create them
-          console.log('[Password Reset] Firebase user not found by email, creating new account');
-          try {
-            const newFirebaseUser = await admin.auth.createUser({
-              email: user.email,
-              password: newPassword,
-              emailVerified: true,
-              phoneNumber: user.phoneNumber || undefined,
-              displayName: user.fullName || undefined
-            });
-            firebaseUid = newFirebaseUser.uid;
-            console.log('[Password Reset] Created new Firebase user:', newFirebaseUser.uid);
-            
-            // Update database with correct Firebase UID
-            await storage.updateUser(user.id, { id: firebaseUid });
-          } catch (createError: any) {
-            console.error('[Password Reset] Failed to create Firebase user:', createError);
-            return res.status(500).json({ 
-              error: "Failed to create authentication account" 
-            });
-          }
-        } else {
-          throw lookupError;
-        }
-      }
-      
-      // Update password for the Firebase user
-      await admin.updateUserPassword(firebaseUid, newPassword, user.email);
-      
-      // CRITICAL: Also update the local PostgreSQL database hashedPassword field
-      // This is necessary for local email/password login to work
+      // Hash the new password with bcrypt
       const hashedPassword = await hashPassword(newPassword);
-      await storage.updateUser(user.id, { hashedPassword });
       
+      // Update password in PostgreSQL database (NOT Firebase)
+      // This also resets failed login attempts and account lockout
+      await updateUserPassword(user.id, hashedPassword);
+      
+      // Clear the reset token
       await clearPasswordResetToken(user.id);
       
       console.log('[Password Reset] Password successfully reset for:', user.email);
@@ -639,6 +591,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('[Confirm Password Reset] Error:', error);
       return res.status(500).json({ error: "Failed to reset password" });
+    }
+  });
+
+  // Phone OTP Password Reset - Updates PostgreSQL database after Firebase update
+  app.post("/api/auth/update-password-otp", async (req, res) => {
+    try {
+      const { idToken, newPassword } = req.body;
+      
+      if (!idToken || !newPassword) {
+        return res.status(400).json({ error: "ID token and new password required" });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters long" });
+      }
+
+      // Verify Firebase token and get user identifier
+      const identifier = await getUserIdentifierFromToken(idToken);
+      let user;
+      
+      if (identifier.type === 'phone') {
+        user = await storage.getUserByPhone(identifier.value);
+      } else {
+        user = await storage.getUserByEmail(identifier.value);
+      }
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      console.log('[OTP Password Reset] Updating password for user:', {
+        userId: user.id,
+        email: user.email
+      });
+
+      // Hash the new password with bcrypt
+      const hashedPassword = await hashPassword(newPassword);
+      
+      // Update password in PostgreSQL database
+      // This also resets failed login attempts and account lockout
+      await updateUserPassword(user.id, hashedPassword);
+      
+      console.log('[OTP Password Reset] Password successfully updated in database for:', user.email);
+      return res.json({ 
+        message: "Password successfully updated in database",
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName
+        }
+      });
+    } catch (error: any) {
+      console.error('[OTP Password Reset] Error:', error);
+      return res.status(500).json({ error: "Failed to update password in database" });
     }
   });
 
@@ -812,7 +818,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/users/upload-photo", (req, res, next) => {
+  app.post("/api/users/upload-photo", authenticateUser, (req, res, next) => {
     uploadPhoto.single('photo')(req, res, (err) => {
       if (err) {
         if (err instanceof multer.MulterError) {
@@ -825,16 +831,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       next();
     });
-  }, async (req, res) => {
+  }, async (req: AuthRequest, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      const idToken = authHeader.split('Bearer ')[1];
-      const decodedToken = await verifyIdToken(idToken);
-      const userId = decodedToken.uid;
+      const userId = req.userId!;
 
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
@@ -853,14 +852,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       return res.json({ photoUrl });
     } catch (error: any) {
-      if (error.message === 'Invalid token') {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
+      console.error('Profile photo upload error:', error);
       return res.status(500).json({ error: "Upload failed" });
     }
   });
 
-  app.post("/api/events/upload-image", (req, res, next) => {
+  app.post("/api/events/upload-image", authenticateUser, (req, res, next) => {
     uploadPhoto.single('image')(req, res, (err) => {
       if (err) {
         if (err instanceof multer.MulterError) {
@@ -873,16 +870,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       next();
     });
-  }, async (req, res) => {
+  }, async (req: AuthRequest, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      const idToken = authHeader.split('Bearer ')[1];
-      const decodedToken = await verifyIdToken(idToken);
-
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
       }
@@ -900,16 +889,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       return res.json({ imageUrl });
     } catch (error: any) {
-      if (error.message === 'Invalid token') {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
+      console.error('Image upload error:', error);
       return res.status(500).json({ error: "Upload failed" });
     }
   });
 
   app.get("/api/users/search", async (req, res) => {
     try {
-      const { techStack, minExperience, maxExperience, flatBlock, excludeUserId } = req.query;
+      const { 
+        techStack, 
+        minExperience, 
+        maxExperience, 
+        flatBlock, 
+        excludeUserId,
+        onlineOnly,
+        interestIds,
+        sameTower,
+        newMembers 
+      } = req.query;
       
       const filters: any = {};
       
@@ -931,6 +928,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (excludeUserId) {
         filters.excludeUserId = excludeUserId as string;
+      }
+      
+      // New filter parameters
+      if (onlineOnly === 'true') {
+        filters.onlineOnly = true;
+      }
+      
+      if (interestIds) {
+        filters.interestIds = Array.isArray(interestIds) ? interestIds : [interestIds];
+      }
+      
+      if (sameTower) {
+        filters.sameTower = sameTower as string;
+      }
+      
+      if (newMembers === 'true') {
+        filters.newMembers = true;
       }
       
       const users = await storage.searchUsers(filters);
@@ -1407,6 +1421,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const job = await storage.createJob(jobData);
+      
+      // Notify all users about new job (fire-and-forget to avoid blocking)
+      notificationHelper.notifyAllUsers({
+        type: NOTIFICATION_TYPES.JOB_NEW_MATCH,
+        entityId: job.id,
+        actorId: userId,
+        payload: {
+          title: job.jobTitle,
+          company: job.companyName,
+          experienceLevel: job.experienceLevel,
+          workMode: job.workMode,
+          jobType: job.jobType,
+        },
+        excludeUserId: userId,
+      }).catch(err => console.error('Failed to send job notifications:', err));
+      
       return res.status(201).json({ job });
     } catch (error: any) {
       console.error('Create job error:', error);
@@ -1714,6 +1744,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rolesNeeded,
         payStructure,
       });
+      
+      // Notify all users about new idea (fire-and-forget to avoid blocking)
+      notificationHelper.notifyAllUsers({
+        type: NOTIFICATION_TYPES.IDEA_NEW,
+        entityId: idea.id,
+        actorId: userId,
+        payload: {
+          title: idea.title,
+          description: idea.description.substring(0, 200),
+          rolesNeeded: idea.rolesNeeded,
+          payStructure: idea.payStructure,
+        },
+        excludeUserId: userId,
+      }).catch(err => console.error('Failed to send idea notifications:', err));
 
       return res.status(201).json({ idea });
     } catch (error: any) {
@@ -3028,6 +3072,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const event = await storage.createEvent(eventData);
+      
+      // Notify all users about new event (fire-and-forget to avoid blocking)
+      notificationHelper.notifyAllUsers({
+        type: NOTIFICATION_TYPES.EVENT_NEW,
+        entityId: event.id,
+        actorId: userId,
+        payload: {
+          title: event.title,
+          eventDate: event.eventDate,
+          location: event.location,
+          eventType: event.eventType,
+          category: event.category,
+        },
+        excludeUserId: userId,
+      }).catch(err => console.error('Failed to send event notifications:', err));
+      
       return res.status(201).json({ event });
     } catch (error: any) {
       console.error('Create event error:', error);
@@ -3291,6 +3351,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Event Feedback Routes
+  app.post("/api/feedback/:eventId", async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      
+      // Validate event exists
+      const event = await storage.getEvent(eventId);
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+
+      // Validate and parse feedback data using schema
+      const feedbackData = insertEventFeedbackSchema.parse({
+        eventId,
+        ...req.body,
+      });
+
+      // Additional validation for rating range
+      if (feedbackData.rating < 1 || feedbackData.rating > 5) {
+        return res.status(400).json({ error: "Rating must be between 1 and 5" });
+      }
+
+      const feedback = await storage.createEventFeedback(feedbackData);
+
+      return res.status(201).json({ feedback, message: "Thank you for your feedback!" });
+    } catch (error: any) {
+      console.error('Submit feedback error:', error);
+      return res.status(500).json({ error: "Failed to submit feedback" });
+    }
+  });
+
+  app.get("/api/feedback/:eventId", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { eventId } = req.params;
+      const userId = req.userId!;
+
+      const event = await storage.getEvent(eventId);
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+
+      if (event.organizerId !== userId) {
+        const isAdmin = await storage.isUserAdmin(userId);
+        if (!isAdmin) {
+          return res.status(403).json({ error: "Unauthorized: Only the event organizer or admins can view feedback" });
+        }
+      }
+
+      const feedbackList = await storage.getEventFeedback(eventId);
+      
+      const stats = {
+        totalSubmissions: feedbackList.length,
+        averageRating: feedbackList.length > 0 
+          ? parseFloat((feedbackList.reduce((sum, f) => sum + f.rating, 0) / feedbackList.length).toFixed(1))
+          : 0,
+        ratingDistribution: {
+          5: feedbackList.filter(f => f.rating === 5).length,
+          4: feedbackList.filter(f => f.rating === 4).length,
+          3: feedbackList.filter(f => f.rating === 3).length,
+          2: feedbackList.filter(f => f.rating === 2).length,
+          1: feedbackList.filter(f => f.rating === 1).length,
+        }
+      };
+
+      return res.json({ feedback: feedbackList, event, stats });
+    } catch (error: any) {
+      console.error('Get feedback error:', error);
+      return res.status(500).json({ error: "Failed to get feedback" });
+    }
+  });
+
   // Forum Category Routes
   app.get("/api/forum/categories", async (req, res) => {
     try {
@@ -3419,6 +3550,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         postType: postType || 'question',
         expertOnly: expertOnly ? 1 : 0,
       });
+      
+      // Notify all users about new forum post (fire-and-forget to avoid blocking)
+      notificationHelper.notifyAllUsers({
+        type: NOTIFICATION_TYPES.FORUM_NEW_POST,
+        entityId: post.id,
+        actorId: userId,
+        payload: {
+          title: post.title,
+          postType: post.postType,
+          categoryId: post.categoryId,
+        },
+        excludeUserId: userId,
+      }).catch(err => console.error('Failed to send forum post notifications:', err));
       
       return res.status(201).json({ post });
     } catch (error: any) {
@@ -3725,8 +3869,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      const decodedToken = await verifyIdToken(token);
-      ws.userId = decodedToken.uid;
+      // Try JWT verification first
+      let userId: string;
+      try {
+        const jwtPayload = verifyToken(token);
+        userId = jwtPayload.userId;
+      } catch (jwtError) {
+        // Fallback to Firebase token verification
+        const decodedToken = await verifyIdToken(token);
+        userId = decodedToken.uid;
+      }
+      
+      ws.userId = userId;
 
       // Update user presence to online
       await storage.updateUserPresence(ws.userId, 'online');
@@ -4309,7 +4463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const item = await storage.createRentalItem({
           ownerId: req.userId!,
-          title: req.body.itemName,
+          title: req.body.name || req.body.itemName,
           description: req.body.description,
           category: req.body.category,
           condition: req.body.condition || 'Good',
@@ -4345,7 +4499,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/rentals/:id", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const updates = {
-        itemName: req.body.itemName,
+        itemName: req.body.name || req.body.itemName,
         description: req.body.description,
         category: req.body.category,
         condition: req.body.condition,
@@ -4519,9 +4673,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith('Bearer ')) {
         try {
-          const idToken = authHeader.split('Bearer ')[1];
-          const decodedToken = await verifyIdToken(idToken);
-          const userId = decodedToken.uid;
+          const token = authHeader.split('Bearer ')[1];
+          let userId: string;
+          
+          // Try JWT verification first
+          try {
+            const jwtPayload = verifyToken(token);
+            userId = jwtPayload.userId;
+          } catch (jwtError) {
+            // Fallback to Firebase token verification
+            const decodedToken = await verifyIdToken(token);
+            userId = decodedToken.uid;
+          }
+          
           const user = await storage.getUser(userId);
 
           // Authenticated users can filter by their own ads or admins can see all
@@ -4758,12 +4922,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Activity Feed Routes
-  app.get("/api/activity-feed", async (req, res) => {
+  app.get("/api/activity-feed", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
       const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+      const filter = (req.query.filter as 'all' | 'following' | 'interests') || 'all';
       
-      const activities = await storage.getActivityFeed({ limit, offset });
+      const activities = await storage.getActivityFeed({ 
+        userId: req.userId,
+        filter,
+        limit, 
+        offset 
+      });
       res.json({ activities });
     } catch (error: any) {
       console.error('Error fetching activity feed:', error);
@@ -4788,6 +4958,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('Error unliking activity:', error);
       res.status(500).json({ error: 'Failed to unlike activity' });
+    }
+  });
+
+  // User Follow Routes
+  app.post("/api/users/:id/follow", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      if (req.params.id === req.userId) {
+        return res.status(400).json({ error: 'Cannot follow yourself' });
+      }
+      await storage.followUser(req.userId!, req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error following user:', error);
+      res.status(500).json({ error: 'Failed to follow user' });
+    }
+  });
+
+  app.delete("/api/users/:id/follow", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      await storage.unfollowUser(req.userId!, req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error unfollowing user:', error);
+      res.status(500).json({ error: 'Failed to unfollow user' });
+    }
+  });
+
+  app.get("/api/users/:id/followers", async (req, res) => {
+    try {
+      const followers = await storage.getFollowers(req.params.id);
+      res.json({ followers });
+    } catch (error: any) {
+      console.error('Error fetching followers:', error);
+      res.status(500).json({ error: 'Failed to fetch followers' });
+    }
+  });
+
+  app.get("/api/users/:id/following", async (req, res) => {
+    try {
+      const following = await storage.getFollowing(req.params.id);
+      res.json({ following });
+    } catch (error: any) {
+      console.error('Error fetching following:', error);
+      res.status(500).json({ error: 'Failed to fetch following' });
+    }
+  });
+
+  app.get("/api/users/:id/follow-stats", async (req, res) => {
+    try {
+      const stats = await storage.getFollowStats(req.params.id);
+      res.json(stats);
+    } catch (error: any) {
+      console.error('Error fetching follow stats:', error);
+      res.status(500).json({ error: 'Failed to fetch follow stats' });
+    }
+  });
+
+  app.get("/api/users/:id/is-following/:targetId", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const isFollowing = await storage.isFollowing(req.params.id, req.params.targetId);
+      res.json({ isFollowing });
+    } catch (error: any) {
+      console.error('Error checking follow status:', error);
+      res.status(500).json({ error: 'Failed to check follow status' });
+    }
+  });
+
+  // Activity Interests Routes
+  app.get("/api/activity-interests", async (req, res) => {
+    try {
+      const topics = await storage.getActivityInterestTopics();
+      res.json({ topics });
+    } catch (error: any) {
+      console.error('Error fetching activity interests:', error);
+      res.status(500).json({ error: 'Failed to fetch activity interests' });
+    }
+  });
+
+  app.get("/api/me/activity-interests", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const interests = await storage.getUserActivityInterests(req.userId!);
+      res.json({ interests });
+    } catch (error: any) {
+      console.error('Error fetching user interests:', error);
+      res.status(500).json({ error: 'Failed to fetch user interests' });
+    }
+  });
+
+  app.put("/api/me/activity-interests", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { interestIds } = req.body;
+      if (!Array.isArray(interestIds)) {
+        return res.status(400).json({ error: 'interestIds must be an array' });
+      }
+      await storage.setUserActivityInterests(req.userId!, interestIds);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error updating user interests:', error);
+      res.status(500).json({ error: 'Failed to update user interests' });
     }
   });
 

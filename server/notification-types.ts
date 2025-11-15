@@ -31,6 +31,10 @@ export const NOTIFICATION_TYPES = {
   TEAMMATE_ACCEPTED: 'teammate_accepted',
   TEAMMATE_REJECTED: 'teammate_rejected',
   IDEA_INTEREST: 'idea_interest',
+  IDEA_NEW: 'idea_new',
+  
+  FORUM_NEW_POST: 'forum_new_post',
+  FORUM_POST_REPLY: 'forum_post_reply',
   
   EVENT_REMINDER: 'event_reminder',
   EVENT_UPDATED: 'event_updated',
@@ -144,8 +148,8 @@ export const NOTIFICATION_CONFIG: Record<string, NotificationConfig> = {
     priority: NOTIFICATION_PRIORITY.MEDIUM,
     realtime: false,
     batchable: true,
-    requiresInterest: true,
-    defaultEnabled: false,
+    requiresInterest: false,
+    defaultEnabled: true,
   },
   [NOTIFICATION_TYPES.JOB_NEW_APPLICATION]: {
     category: NOTIFICATION_CATEGORIES.JOBS,
@@ -221,6 +225,31 @@ export const NOTIFICATION_CONFIG: Record<string, NotificationConfig> = {
     requiresInterest: false,
     defaultEnabled: true,
   },
+  [NOTIFICATION_TYPES.IDEA_NEW]: {
+    category: NOTIFICATION_CATEGORIES.COMMUNITY,
+    priority: NOTIFICATION_PRIORITY.LOW,
+    realtime: false,
+    batchable: true,
+    requiresInterest: false,
+    defaultEnabled: true,
+  },
+  
+  [NOTIFICATION_TYPES.FORUM_NEW_POST]: {
+    category: NOTIFICATION_CATEGORIES.COMMUNICATIONS,
+    priority: NOTIFICATION_PRIORITY.LOW,
+    realtime: false,
+    batchable: true,
+    requiresInterest: false,
+    defaultEnabled: true,
+  },
+  [NOTIFICATION_TYPES.FORUM_POST_REPLY]: {
+    category: NOTIFICATION_CATEGORIES.COMMUNICATIONS,
+    priority: NOTIFICATION_PRIORITY.MEDIUM,
+    realtime: true,
+    batchable: false,
+    requiresInterest: false,
+    defaultEnabled: true,
+  },
   
   [NOTIFICATION_TYPES.EVENT_REMINDER]: {
     category: NOTIFICATION_CATEGORIES.COMMUNITY,
@@ -251,8 +280,8 @@ export const NOTIFICATION_CONFIG: Record<string, NotificationConfig> = {
     priority: NOTIFICATION_PRIORITY.LOW,
     realtime: false,
     batchable: true,
-    requiresInterest: true,
-    defaultEnabled: false,
+    requiresInterest: false,
+    defaultEnabled: true,
   },
   
   [NOTIFICATION_TYPES.ADMIN_ANNOUNCEMENT]: {

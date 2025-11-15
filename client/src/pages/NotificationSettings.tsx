@@ -184,7 +184,20 @@ export default function NotificationSettings({ idToken, userId }: NotificationSe
     value: boolean | string
   ) => {
     const pref = getPreference(category, subcategory);
-    if (!pref) return;
+    
+    // If preference doesn't exist, create it with default values
+    if (!pref) {
+      setSaveStatus("saving");
+      updatePreferencesMutation.mutate([{
+        userId,
+        category,
+        subcategory,
+        inAppEnabled: field === 'inAppEnabled' ? (value as boolean) : true,
+        emailEnabled: field === 'emailEnabled' ? (value as boolean) : false,
+        emailFrequency: field === 'emailFrequency' ? (value as string) : 'digest',
+      }]);
+      return;
+    }
 
     const updated = { ...pref, [field]: value };
     setSaveStatus("saving");

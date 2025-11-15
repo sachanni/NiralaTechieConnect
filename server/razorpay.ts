@@ -4,14 +4,18 @@ import crypto from 'crypto';
 const razorpayKeyId = process.env.RAZORPAY_KEY_ID;
 const razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
 
-if (!razorpayKeyId || !razorpayKeySecret) {
-  throw new Error('Razorpay API keys not found in environment variables');
-}
+export const razorpay = (razorpayKeyId && razorpayKeySecret) 
+  ? new Razorpay({
+      key_id: razorpayKeyId,
+      key_secret: razorpayKeySecret,
+    })
+  : null;
 
-export const razorpay = new Razorpay({
-  key_id: razorpayKeyId,
-  key_secret: razorpayKeySecret,
-});
+const isRazorpayEnabled = razorpay !== null;
+
+if (!isRazorpayEnabled) {
+  console.warn('[Razorpay] Payment gateway disabled - RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET not configured');
+}
 
 export interface CreateOrderParams {
   amount: number;
@@ -21,6 +25,10 @@ export interface CreateOrderParams {
 }
 
 export async function createRazorpayOrder(params: CreateOrderParams) {
+  if (!razorpay) {
+    throw new Error('Razorpay is not configured. Please add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to environment variables.');
+  }
+  
   try {
     const order = await razorpay.orders.create({
       amount: params.amount * 100, // Convert to smallest currency unit (paise)
@@ -43,13 +51,18 @@ export interface VerifyPaymentParams {
 }
 
 export function verifyRazorpaySignature(params: VerifyPaymentParams): boolean {
+  if (!razorpayKeySecret) {
+    console.error('Razorpay is not configured - cannot verify payment signature');
+    return false;
+  }
+  
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = params;
 
     const body = `${razorpay_order_id}|${razorpay_payment_id}`;
 
     const expectedSignature = crypto
-      .createHmac('sha256', razorpayKeySecret!)
+      .createHmac('sha256', razorpayKeySecret)
       .update(body)
       .digest('hex');
 
@@ -60,6 +73,10 @@ export function verifyRazorpaySignature(params: VerifyPaymentParams): boolean {
   }
 }
 
-export function getRazorpayKeyId(): string {
-  return razorpayKeyId!;
+export function getRazorpayKeyId(): string | null {
+  return razorpayKeyId || null;
+}
+
+export function isRazorpayConfigured(): boolean {
+  return razorpay !== null;
 }
