@@ -659,11 +659,12 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
               const isOwnProfile = userId === user.id;
               
               return (
-                <Link key={user.id} href={`/profile/${user.id}`}>
-                  <Card
-                    className="hover-elevate cursor-pointer"
-                    data-testid={`card-member-${user.id}`}
-                  >
+                <Card
+                  key={user.id}
+                  className="hover-elevate cursor-pointer"
+                  data-testid={`card-member-${user.id}`}
+                  onClick={() => setLocation(`/profile/${user.id}`)}
+                >
                   <CardContent className="p-4 md:p-6">
                     <div className="flex gap-3 md:gap-4">
                       <div className="relative flex-shrink-0">
@@ -718,6 +719,7 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
                             size="sm"
                             onClick={(e) => {
                               e.stopPropagation();
+                              e.preventDefault();
                               followMutation.mutate({ 
                                 targetUserId: user.id, 
                                 targetUserName: user.fullName,
@@ -747,7 +749,6 @@ export default function FindTeammates({ userId, idToken }: FindTeammatesProps = 
                     </div>
                   </CardContent>
                 </Card>
-                </Link>
               );
             })}
           </div>

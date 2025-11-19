@@ -47,7 +47,7 @@ interface DashboardProps {
 
 export default function Dashboard({ user, userId, idToken }: DashboardProps) {
   const [, setLocation] = useLocation();
-  const [feedFilter, setFeedFilter] = useState("all");
+  const [feedFilter, setFeedFilter] = useState<"all" | "following" | "interests" | "discussions">("all");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const rightSidebarRef = useRef<HTMLDivElement>(null);
@@ -140,7 +140,7 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
   const { data: activityData, isLoading: activityLoading } = useQuery<{ activities: any[] }>({
     queryKey: ['activity-feed', feedFilter],
     queryFn: async () => {
-      const response = await fetch(`/api/activity-feed?limit=20`, {
+      const response = await fetch(`/api/activity-feed?limit=20&filter=${feedFilter}`, {
         headers: {
           'Authorization': `Bearer ${idToken}`
         }
@@ -326,6 +326,7 @@ export default function Dashboard({ user, userId, idToken }: DashboardProps) {
                         <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
                         <TabsTrigger value="following" className="text-xs">Following</TabsTrigger>
                         <TabsTrigger value="interests" className="text-xs">My Interests</TabsTrigger>
+                        <TabsTrigger value="discussions" className="text-xs">Discussions</TabsTrigger>
                       </TabsList>
                     </Tabs>
                   </div>

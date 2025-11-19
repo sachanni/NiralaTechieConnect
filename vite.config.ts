@@ -35,8 +35,8 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5000,
     strictPort: true,
-    allowedHosts: true,
-    hmr: false,
+    allowedHosts: true, // Allow all hosts for Replit environment
+    // HMR configured in server/vite.ts via middleware mode
     fs: {
       strict: true,
       deny: ["**/.*"],

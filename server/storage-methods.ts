@@ -80,7 +80,16 @@ export async function resetFailedLoginAttempts(userId: string): Promise<void> {
     .where(eq(users.id, userId));
 }
 
-export async function getActivityFeed(limit: number = 20) {
+export async function getActivityFeed(options: { limit?: number; offset?: number; filter?: 'all' | 'following' | 'interests' | 'discussions'; userId?: string } = {}) {
+  const { limit = 20, offset = 0, filter = 'all', userId } = options;
+  
+  // If discussions filter is requested, delegate to the storage class method
+  if (filter === 'discussions' || filter === 'following' || filter === 'interests') {
+    const { storage } = await import('./storage');
+    return storage.getActivityFeed({ userId, filter, limit, offset });
+  }
+  
+  // Default 'all' filter behavior
   const [
     recentEvents,
     recentJobs,
@@ -256,5 +265,5 @@ export async function getActivityFeed(limit: number = 20) {
 
   allActivities.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-  return allActivities.slice(0, limit);
+  return allActivities.slice(offset, offset + limit);
 }

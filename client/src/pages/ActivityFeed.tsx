@@ -10,6 +10,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Activity as ActivityIcon, Heart, MessageSquare, Users, Briefcase, Lightbulb, Calendar, Search as SearchIcon, Megaphone, Loader2, Settings, UserPlus, UserMinus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistance } from "date-fns";
+import { useForumSubscriptions } from "@/hooks/useForumSubscriptions";
+import ForumDiscoveryPanel from "@/components/ForumDiscoveryPanel";
+import { Link } from "wouter";
 
 interface User {
   id: string;
@@ -39,8 +42,9 @@ export default function ActivityFeed({ userId, idToken }: ActivityFeedProps = {}
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'following' | 'interests'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'following' | 'interests' | 'discussions'>('all');
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const { subscriptions } = useForumSubscriptions();
 
   // Fetch activity interests topics
   const { data: interestsData } = useQuery({
@@ -85,6 +89,19 @@ export default function ActivityFeed({ userId, idToken }: ActivityFeedProps = {}
       return response.json();
     },
     enabled: !!idToken && userId !== undefined,
+  });
+
+  // Fetch forum categories - Preload so Discussions tab has data ready
+  const { data: categoriesData, isLoading: categoriesLoading, error: categoriesError, refetch: refetchCategories } = useQuery({
+    queryKey: ['/api/forum/categories'],
+    queryFn: async () => {
+      const response = await fetch('/api/forum/categories');
+      if (!response.ok) throw new Error('Failed to fetch categories');
+      return response.json();
+    },
+    enabled: true, // Always fetch to avoid loading flash when switching to Discussions tab
+    retry: 2,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes to reduce redundant fetches
   });
 
   // Infinite query for activity feed with filtering
@@ -273,6 +290,8 @@ export default function ActivityFeed({ userId, idToken }: ActivityFeedProps = {}
       'new_event': Calendar,
       'lost_found': SearchIcon,
       'announcement': Megaphone,
+      'forum_post': MessageSquare,
+      'forum_reply': MessageSquare,
     };
     const Icon = icons[type] || ActivityIcon;
     return <Icon className="w-5 h-5" />;
@@ -286,6 +305,8 @@ export default function ActivityFeed({ userId, idToken }: ActivityFeedProps = {}
       'new_event': 'text-orange-500',
       'lost_found': 'text-yellow-500',
       'announcement': 'text-pink-500',
+      'forum_post': 'text-indigo-500',
+      'forum_reply': 'text-cyan-500',
     };
     return colors[type] || 'text-gray-500';
   };
@@ -339,9 +360,9 @@ export default function ActivityFeed({ userId, idToken }: ActivityFeedProps = {}
 
       {/* Tabbed Feed */}
       <div className="max-w-4xl mx-auto px-4 md:px-6 py-4 md:py-6">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'all' | 'following' | 'interests')} className="space-y-4">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'all' | 'following' | 'interests' | 'discussions')} className="space-y-4">
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <TabsList className="grid w-full max-w-md grid-cols-3">
+            <TabsList className="grid w-full max-w-2xl grid-cols-4">
               <TabsTrigger value="all" data-testid="tab-all" className="gap-2">
                 <Users className="w-4 h-4" />
                 <span className="hidden sm:inline">All</span>
@@ -359,6 +380,10 @@ export default function ActivityFeed({ userId, idToken }: ActivityFeedProps = {}
                 {userInterests.length > 0 && (
                   <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs">{userInterests.length}</Badge>
                 )}
+              </TabsTrigger>
+              <TabsTrigger value="discussions" data-testid="tab-discussions" className="gap-2">
+                <MessageSquare className="w-4 h-4" />
+                <span className="hidden sm:inline">Discussions</span>
               </TabsTrigger>
             </TabsList>
 
@@ -491,11 +516,37 @@ export default function ActivityFeed({ userId, idToken }: ActivityFeedProps = {}
 
           {/* Tab Content */}
           <TabsContent value={activeTab} className="space-y-4 mt-4">
+            {/* Forum Discovery Panel for Discussions Tab */}
+            {activeTab === 'discussions' && (
+              <>
+                {subscriptions.length === 0 ? (
+                  /* Empty State: User has no subscriptions - Show prominent onboarding panel (handles loading/error internally) */
+                  <ForumDiscoveryPanel
+                    categories={categoriesData?.categories || []}
+                    isLoading={categoriesLoading}
+                    error={categoriesError as Error | null}
+                    onRetry={() => refetchCategories()}
+                    mode="empty-state"
+                  />
+                ) : (
+                  /* Compact Mode: User has ≥1 subscription - Always render to show loading/error/all-subscribed states */
+                  <ForumDiscoveryPanel
+                    categories={categoriesData?.categories || []}
+                    isLoading={categoriesLoading}
+                    error={categoriesError as Error | null}
+                    onRetry={() => refetchCategories()}
+                    mode="compact"
+                  />
+                )}
+              </>
+            )}
+
+            {/* Activity Feed Content */}
             {isLoading ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
               </div>
-            ) : allActivities.length === 0 ? (
+            ) : allActivities.length === 0 && !(activeTab === 'discussions' && subscriptions.length === 0) ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <ActivityIcon className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
@@ -513,13 +564,21 @@ export default function ActivityFeed({ userId, idToken }: ActivityFeedProps = {}
                           : "No recent activity in your selected topics"}
                       </p>
                     </div>
+                  ) : activeTab === 'discussions' ? (
+                    <div>
+                      <p className="font-medium mb-2">No new discussions yet</p>
+                      <p className="text-sm text-muted-foreground">
+                        Check back later for new posts from your subscribed forums
+                      </p>
+                    </div>
                   ) : (
                     <p className="text-muted-foreground">No activities yet. Start exploring the community!</p>
                   )}
                 </CardContent>
               </Card>
-            ) : (
+            ) : allActivities.length > 0 ? (
               <>
+
                 {allActivities.map((activity) => {
                   const isOwnActivity = activity.userId === userId;
                   const isFollowingUser = following.some((f: any) => f.id === activity.userId);
@@ -619,7 +678,7 @@ export default function ActivityFeed({ userId, idToken }: ActivityFeedProps = {}
                   ) : null}
                 </div>
               </>
-            )}
+            ) : null}
           </TabsContent>
         </Tabs>
       </div>

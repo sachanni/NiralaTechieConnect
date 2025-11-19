@@ -94,6 +94,10 @@ export default function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
         return <Lightbulb className="w-5 h-5 text-yellow-600" />;
       case 'discussion':
         return <MessageSquare className="w-5 h-5 text-indigo-600" />;
+      case 'forum_post':
+        return <MessageSquare className="w-5 h-5 text-indigo-600" />;
+      case 'forum_reply':
+        return <MessageSquare className="w-5 h-5 text-cyan-600" />;
       case 'gallery':
         return <Camera className="w-5 h-5 text-pink-600" />;
       case 'lost-and-found':
@@ -117,6 +121,10 @@ export default function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
         return 'shared an idea';
       case 'discussion':
         return 'started a discussion';
+      case 'forum_post':
+        return 'asked a question';
+      case 'forum_reply':
+        return 'replied in forum';
       case 'gallery':
         return 'created a photo gallery';
       case 'lost-and-found':
@@ -144,6 +152,17 @@ export default function ActivityFeedItem({ activity }: ActivityFeedItemProps) {
         return `/ideas/${activity.id}`;
       case 'discussion':
         return `/forum`;
+      case 'forum_post':
+        return `/forum/post/${activity.id}`;
+      case 'forum_reply':
+        try {
+          const metadata = typeof activity.metadata === 'string' 
+            ? JSON.parse(activity.metadata) 
+            : activity.metadata;
+          return `/forum/post/${metadata.postId}`;
+        } catch {
+          return '/forum';
+        }
       case 'gallery':
         return `/photo-gallery`;
       case 'lost-and-found':

@@ -22,8 +22,8 @@ export function log(message: string, source = "express") {
 export async function setupVite(app: Express, server: Server) {
   const serverOptions = {
     middlewareMode: true,
-    hmr: false,
-    allowedHosts: true as const,
+    allowedHosts: true, // Allow all hosts for Replit environment
+    hmr: false, // Disable HMR - manual refresh required for code changes
   };
 
   const vite = await createViteServer({

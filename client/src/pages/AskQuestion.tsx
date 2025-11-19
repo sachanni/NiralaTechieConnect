@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation, Link } from "wouter";
+import { useLocation, useSearch, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ interface AskQuestionProps {
 
 export default function AskQuestion({ idToken }: AskQuestionProps = {}) {
   const [, navigate] = useLocation();
+  const searchParams = useSearch();
   const { toast } = useToast();
 
   const [title, setTitle] = useState("");
@@ -44,6 +45,24 @@ export default function AskQuestion({ idToken }: AskQuestionProps = {}) {
       return response.json();
     },
   });
+
+  // Pre-select category from query parameter
+  useEffect(() => {
+    if (categoriesData?.categories && searchParams) {
+      const params = new URLSearchParams(searchParams);
+      const categorySlug = params.get('category');
+      
+      if (categorySlug && !categoryId) {
+        const matchingCategory = categoriesData.categories.find(
+          cat => cat.slug === categorySlug
+        );
+        
+        if (matchingCategory) {
+          setCategoryId(matchingCategory.id);
+        }
+      }
+    }
+  }, [categoriesData, searchParams, categoryId]);
 
   const createPostMutation = useMutation({
     mutationFn: async (data: { 

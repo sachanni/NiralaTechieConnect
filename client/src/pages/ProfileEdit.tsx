@@ -12,7 +12,6 @@ import { queryClient } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { ChevronLeft, Loader2, User, Briefcase, Award, Link as LinkIcon } from "lucide-react";
 import TechStackSelector from "@/components/TechStackSelector";
-import RoleSelector from "@/components/RoleSelector";
 import OccupationSelector from "@/components/OccupationSelector";
 import { TOWER_OPTIONS } from "../../../shared/serviceCategories";
 import ProfilePhotoUpload from "@/components/ProfilePhotoUpload";
@@ -334,25 +333,6 @@ export default function ProfileEdit({ userId, idToken }: ProfileEditProps) {
                 data-testid="input-website"
               />
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Services & Roles */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Award className="h-5 w-5 text-primary" />
-              <CardTitle>Services & Roles</CardTitle>
-            </div>
-            <CardDescription>What services do you offer or seek?</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <RoleSelector
-              selectedCategories={formData.serviceCategories}
-              categoryRoles={formData.categoryRoles}
-              onCategoriesChange={(categories) => updateField('serviceCategories', categories)}
-              onRolesChange={(roles) => updateField('categoryRoles', roles)}
-            />
           </CardContent>
         </Card>
 

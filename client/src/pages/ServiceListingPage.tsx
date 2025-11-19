@@ -10,11 +10,15 @@ import { motion } from 'framer-motion';
 import { SERVICE_CATEGORIES, TOWER_OPTIONS } from '../../../shared/serviceCategories';
 import type { User } from '../../../shared/schema';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 
 export default function ServiceListingPage() {
   const params = useParams<{ categoryId: string }>();
   const [, setLocation] = useLocation();
   const categoryId = params.categoryId || '';
+  const { idToken } = useAuth();
+  const { toast } = useToast();
   
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -43,8 +47,16 @@ export default function ServiceListingPage() {
   }) || [];
 
   const handleContact = async (userId: string) => {
+    if (!idToken) {
+      toast({
+        title: "Authentication required",
+        description: "Please log in to contact other users",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
-      const idToken = localStorage.getItem('idToken');
       const response = await fetch('/api/conversations/create', {
         method: 'POST',
         headers: {
@@ -54,12 +66,20 @@ export default function ServiceListingPage() {
         body: JSON.stringify({ otherUserId: userId }),
       });
 
-      if (!response.ok) throw new Error('Failed to create conversation');
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Failed to create conversation' }));
+        throw new Error(error.error || 'Failed to create conversation');
+      }
       
       const { conversation } = await response.json();
       setLocation(`/chat?conversation=${conversation.id}`);
     } catch (error) {
       console.error('Contact error:', error);
+      toast({
+        title: "Failed to start conversation",
+        description: error instanceof Error ? error.message : "Please try again later",
+        variant: "destructive",
+      });
     }
   };
 
@@ -180,6 +200,7 @@ export default function ServiceListingPage() {
                     user={user}
                     categoryId={categoryId}
                     onContact={handleContact}
+                    roleFilter={roleFilter}
                   />
                 </motion.div>
               ))}

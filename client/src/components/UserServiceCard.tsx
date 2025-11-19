@@ -3,18 +3,20 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { RoleBadge } from '@/components/ui/role-badge';
-import { MessageCircle, Star, MapPin, Building2 } from 'lucide-react';
+import { MessageCircle, Star, MapPin, Building2, Sparkles, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
-import type { User } from '../../../shared/schema';
+import type { User, UserService } from '../../../shared/schema';
 import type { RoleType } from '../../../shared/serviceCategories';
+import { SERVICE_CATEGORIES } from '../../../shared/serviceCategories';
 
 interface UserServiceCardProps {
-  user: User;
+  user: User & { userServices?: UserService[] };
   categoryId: string;
   onContact: (userId: string) => void;
+  roleFilter?: 'all' | 'providers' | 'seekers';
 }
 
-export default function UserServiceCard({ user, categoryId, onContact }: UserServiceCardProps) {
+export default function UserServiceCard({ user, categoryId, onContact, roleFilter = 'all' }: UserServiceCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   
   const categoryRoles = (user.categoryRoles as Record<string, RoleType[]>)[categoryId] || [];
@@ -28,6 +30,18 @@ export default function UserServiceCard({ user, categoryId, onContact }: UserSer
   const getRatingDisplay = () => {
     if (user.mentorRating === 0) return 'New';
     return (user.mentorRating / 10).toFixed(1);
+  };
+
+  // Get the category to access its services
+  const category = SERVICE_CATEGORIES.find(c => c.id === categoryId);
+  
+  // Group user services by role type
+  const offeringServices = user.userServices?.filter(s => s.roleType === 'provider') || [];
+  const seekingServices = user.userServices?.filter(s => s.roleType === 'seeker') || [];
+  
+  // Get service names from service IDs
+  const getServiceName = (serviceId: string) => {
+    return category?.services.find(s => s.id === serviceId)?.name || serviceId;
   };
 
   return (
@@ -70,6 +84,36 @@ export default function UserServiceCard({ user, categoryId, onContact }: UserSer
             </div>
 
             <RoleBadge roles={categoryRoles} className="mb-2" />
+
+            {/* Specific Services */}
+            {(offeringServices.length > 0 || seekingServices.length > 0) && (
+              <div className="mb-3 space-y-1.5">
+                {/* Show Offering only if filter is 'all' or 'providers' */}
+                {offeringServices.length > 0 && (roleFilter === 'all' || roleFilter === 'providers') && (
+                  <div className="flex items-start gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-green-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-xs">
+                      <span className="font-medium text-green-700">Offering: </span>
+                      <span className="text-gray-700">
+                        {offeringServices.map(s => getServiceName(s.serviceId)).join(', ')}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {/* Show Seeking only if filter is 'all' or 'seekers' */}
+                {seekingServices.length > 0 && (roleFilter === 'all' || roleFilter === 'seekers') && (
+                  <div className="flex items-start gap-1.5">
+                    <Search className="h-3.5 w-3.5 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-xs">
+                      <span className="font-medium text-blue-700">Seeking: </span>
+                      <span className="text-gray-700">
+                        {seekingServices.map(s => getServiceName(s.serviceId)).join(', ')}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
               {user.towerName && (

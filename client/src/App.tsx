@@ -204,15 +204,36 @@ function Router() {
 
     const refreshToken = async () => {
       try {
-        const { getAuth } = await import('firebase/auth');
-        const auth = getAuth();
-        const currentUser = auth.currentUser;
+        // Check if user is logged in with JWT (email/password)
+        const jwtToken = localStorage.getItem('accessToken');
         
-        if (currentUser) {
-          const freshToken = await currentUser.getIdToken(true);
-          setIdToken(freshToken);
-          localStorage.setItem('idToken', freshToken);
-          console.log('Token refreshed successfully');
+        if (jwtToken) {
+          // JWT token refresh
+          const response = await fetch('/api/auth/refresh', {
+            method: 'POST',
+            credentials: 'include', // Include httpOnly cookies
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            setIdToken(data.accessToken);
+            localStorage.setItem('accessToken', data.accessToken);
+            console.log('JWT token refreshed successfully');
+          } else {
+            throw new Error('JWT token refresh failed');
+          }
+        } else {
+          // Firebase token refresh
+          const { getAuth } = await import('firebase/auth');
+          const auth = getAuth();
+          const currentUser = auth.currentUser;
+          
+          if (currentUser) {
+            const freshToken = await currentUser.getIdToken(true);
+            setIdToken(freshToken);
+            localStorage.setItem('idToken', freshToken);
+            console.log('Firebase token refreshed successfully');
+          }
         }
       } catch (error) {
         console.error('Token refresh failed:', error);
@@ -223,13 +244,17 @@ function Router() {
         });
         localStorage.removeItem('idToken');
         localStorage.removeItem('userData');
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('user');
         setAppState('landing');
         setLocation('/');
       }
     };
 
-    const interval = setInterval(refreshToken, 50 * 60 * 1000);
+    // Refresh token every 10 minutes (JWT tokens expire after 15 minutes)
+    const interval = setInterval(refreshToken, 10 * 60 * 1000);
     
+    // Initial refresh after 5 seconds
     const timeoutId = setTimeout(refreshToken, 5000);
 
     return () => {
@@ -531,7 +556,7 @@ function Router() {
               }}
             />
           )}
-          {appState === 'phone' && <PhoneVerification onVerified={handlePhoneVerified} />}
+          {appState === 'phone' && <PhoneVerification onVerified={handlePhoneVerified} onBack={() => setAppState('landing')} />}
           {appState === 'password-reset' && (
             <PasswordResetForm
               phoneNumber={phoneNumber}

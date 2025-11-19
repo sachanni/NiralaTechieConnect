@@ -3,15 +3,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Smartphone } from "lucide-react";
+import { Smartphone, ArrowLeft } from "lucide-react";
 import { PhoneAuthService } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 
 interface PhoneVerificationProps {
   onVerified: (idToken: string, phoneNumber: string) => void;
+  onBack?: () => void;
 }
 
-export default function PhoneVerification({ onVerified }: PhoneVerificationProps) {
+export default function PhoneVerification({ onVerified, onBack }: PhoneVerificationProps) {
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -127,7 +128,29 @@ export default function PhoneVerification({ onVerified }: PhoneVerificationProps
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
       <div id="recaptcha-container"></div>
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
+        <CardHeader className="text-center relative">
+          {onBack && step === 'phone' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onBack}
+              className="absolute left-2 top-2"
+              data-testid="button-back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+          )}
+          {step === 'otp' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setStep('phone')}
+              className="absolute left-2 top-2"
+              data-testid="button-back-to-phone"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+          )}
           <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
             <Smartphone className="w-6 h-6 text-primary" />
           </div>

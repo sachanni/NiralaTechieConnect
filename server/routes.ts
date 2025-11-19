@@ -328,6 +328,11 @@ async function authorizeAdmin(req: AuthRequest, res: Response, next: NextFunctio
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  // Health check endpoint for Cloud Run deployment verification
+  app.get("/healthz", (req, res) => {
+    res.status(200).json({ status: "ok" });
+  });
+  
   app.post("/api/auth/register", async (req, res) => {
     try {
       const { email, password, phoneNumber, fullName, flatNumber, towerName, residencyType, residentSince } = req.body;
@@ -956,17 +961,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/activity-feed", async (req, res) => {
-    try {
-      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
-      const activities = await getActivityFeed(limit);
-      return res.json({ activities });
-    } catch (error: any) {
-      console.error('Activity feed error:', error);
-      return res.status(500).json({ error: "Failed to fetch activity feed" });
-    }
-  });
-
   app.get("/api/services/:categoryId/users", async (req, res) => {
     try {
       const { categoryId } = req.params;
@@ -975,7 +969,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const roleFilter = role === 'provider' || role === 'seeker' ? role : undefined;
       const users = await storage.getUsersByCategory(categoryId, roleFilter);
       
-      return res.json({ users });
+      // Fetch service details for each user
+      const usersWithServices = await Promise.all(
+        users.map(async (user) => {
+          const userServicesList = await storage.getUserServices(user.id);
+          
+          // Filter to current category only
+          const categoryServices = userServicesList.filter(s => s.categoryId === categoryId);
+          
+          // Further filter by role if specified
+          const filteredServices = roleFilter 
+            ? categoryServices.filter(s => s.roleType === roleFilter)
+            : categoryServices;
+          
+          return {
+            ...user,
+            userServices: filteredServices,
+          };
+        })
+      );
+      
+      return res.json({ users: usersWithServices });
     } catch (error: any) {
       console.error('Get category users error:', error);
       return res.status(500).json({ error: "Failed to get users" });
@@ -986,6 +1000,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CRITICAL: Specific /api/users/* routes MUST be defined BEFORE the 
   // parameterized /api/users/:id route to prevent routing conflicts
   // ============================================================================
+
+  app.get("/api/users/me", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      return res.json({ user });
+    } catch (error: any) {
+      console.error('Get current user error:', error);
+      return res.status(500).json({ error: "Failed to fetch user" });
+    }
+  });
 
   app.get("/api/users/settings", authenticateUser, async (req: AuthRequest, res) => {
     try {
@@ -3465,6 +3493,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Forum Category Subscription Routes
+  app.post("/api/forum/categories/:categoryId/subscribe", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const { categoryId } = req.params;
+      
+      const subscription = await storage.subscribeToCategory(userId, categoryId);
+      return res.status(201).json({ subscription });
+    } catch (error: any) {
+      console.error('Subscribe to category error:', error);
+      return res.status(500).json({ error: "Failed to subscribe to category" });
+    }
+  });
+
+  app.post("/api/forum/categories/:categoryId/unsubscribe", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const { categoryId } = req.params;
+      
+      await storage.unsubscribeFromCategory(userId, categoryId);
+      return res.status(200).json({ message: "Unsubscribed successfully" });
+    } catch (error: any) {
+      console.error('Unsubscribe from category error:', error);
+      return res.status(500).json({ error: "Failed to unsubscribe from category" });
+    }
+  });
+
+  app.get("/api/forum/subscriptions", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const categoryIds = await storage.getUserSubscribedCategories(userId);
+      return res.json({ categoryIds });
+    } catch (error: any) {
+      console.error('Get subscriptions error:', error);
+      return res.status(500).json({ error: "Failed to get subscriptions" });
+    }
+  });
+
+  app.get("/api/forum/categories/:categoryId/is-subscribed", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.userId!;
+      const { categoryId } = req.params;
+      
+      const isSubscribed = await storage.isUserSubscribed(userId, categoryId);
+      return res.json({ isSubscribed });
+    } catch (error: any) {
+      console.error('Check subscription error:', error);
+      return res.status(500).json({ error: "Failed to check subscription" });
+    }
+  });
+
   // Forum Post Routes
   app.get("/api/forum/posts", async (req, res) => {
     try {
@@ -4926,7 +5005,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
       const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
-      const filter = (req.query.filter as 'all' | 'following' | 'interests') || 'all';
+      const filter = (req.query.filter as 'all' | 'following' | 'interests' | 'discussions') || 'all';
       
       const activities = await storage.getActivityFeed({ 
         userId: req.userId,

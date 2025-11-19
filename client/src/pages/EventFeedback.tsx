@@ -21,9 +21,11 @@ export default function EventFeedback() {
   const [comments, setComments] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
-  const { data: event, isLoading: eventLoading } = useQuery<Event>({
+  const { data: eventData, isLoading: eventLoading } = useQuery<{ event: Event }>({
     queryKey: [`/api/events/${eventId}`],
   });
+  
+  const event = eventData?.event;
 
   const submitFeedbackMutation = useMutation({
     mutationFn: async (feedbackData: {
@@ -163,25 +165,32 @@ export default function EventFeedback() {
 
             <CardContent className="space-y-4 sm:space-y-5 px-4 sm:px-6">
               {/* Event Info */}
-              <div className="bg-white/5 backdrop-blur-sm rounded-md p-3 sm:p-4 border border-white/10">
-                <h3 className="font-semibold text-white mb-2 text-base sm:text-lg">{event.title}</h3>
-                <div className="space-y-1 text-xs sm:text-sm text-white/70">
+              <div className="bg-white/10 backdrop-blur-md rounded-lg p-4 sm:p-5 border-2 border-white/30 shadow-lg">
+                <h3 className="font-bold text-white mb-3 text-lg sm:text-xl leading-tight">
+                  {event.title || "Event Feedback"}
+                </h3>
+                <div className="space-y-2 text-sm sm:text-base">
                   {event.eventDate && (
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                      <span>{new Date(event.eventDate).toLocaleDateString('en-US', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      })}</span>
+                    <div className="flex items-center gap-2.5 text-white/90">
+                      <Calendar className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 text-white" />
+                      <span className="font-medium">
+                        {new Date(event.eventDate).toLocaleDateString('en-US', { 
+                          weekday: 'long', 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </span>
                     </div>
                   )}
                   {event.location && (
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                      <span>{event.location}</span>
+                    <div className="flex items-center gap-2.5 text-white/90">
+                      <MapPin className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 text-white" />
+                      <span className="font-medium">{event.location}</span>
                     </div>
+                  )}
+                  {!event.eventDate && !event.location && (
+                    <p className="text-white/70 text-sm italic">Event details not available</p>
                   )}
                 </div>
               </div>

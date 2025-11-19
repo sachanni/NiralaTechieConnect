@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useLocation } from 'wouter';
 import { motion } from 'framer-motion';
 import { SERVICE_CATEGORIES, COMMUNITY_FEATURES } from '../../../shared/serviceCategories';
-import { ChevronRight, Settings, ArrowRight } from 'lucide-react';
+import { ChevronRight, Settings, ArrowRight, ArrowLeft } from 'lucide-react';
 
 export default function ServicesHub() {
   const [, setLocation] = useLocation();
@@ -11,6 +11,23 @@ export default function ServicesHub() {
   return (
     <div className="min-h-screen bg-gray-50 pb-24 md:pb-8">
       <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Back Button */}
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="mb-6"
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLocation('/dashboard')}
+            className="gap-2 hover:bg-gray-100"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Back to Dashboard</span>
+          </Button>
+        </motion.div>
+
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}

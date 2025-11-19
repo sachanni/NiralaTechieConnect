@@ -40,8 +40,14 @@ const eventFormSchema = z.object({
   }),
   eventDate: z.date({
     required_error: "Please select a date for the event",
-  }).refine((date) => date > new Date(), {
-    message: "Event date must be in the future",
+  }).refine((date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const eventDate = new Date(date);
+    eventDate.setHours(0, 0, 0, 0);
+    return eventDate >= today;
+  }, {
+    message: "Event date cannot be in the past",
   }),
   eventTime: z.string().min(1, "Please select a time for the event").regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, "Time must be in HH:MM format (e.g., 18:00)"),
   location: z.string().min(5, "Location must be at least 5 characters"),
@@ -118,7 +124,8 @@ export default function CreateEditEvent({ userId, idToken }: CreateEditEventProp
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to fetch event');
       }
-      return response.json();
+      const data = await response.json();
+      return data.event;
     },
     enabled: isEditMode,
     retry: false,

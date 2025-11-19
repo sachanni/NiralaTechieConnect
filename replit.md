@@ -56,6 +56,23 @@ Nirala Techie Connect is a community platform for IT professionals residing in N
 - **Real-time Updates**: Follow/unfollow actions immediately update UI across all pages using React Query cache invalidation with predicate-based patterns
 - **Authentication Guards**: All follow actions properly check for authentication and display appropriate loading states
 
+### Forum Category Subscriptions (November 16, 2025)
+- **Personalized Discussions Feed**: Users can subscribe to specific forum categories to customize their activity feed
+- **Database Schema**: Added `forum_category_subscriptions` table with userId/categoryId unique constraint for efficient subscription management
+- **Backend API**: Implemented authenticated subscription endpoints:
+  - `POST /api/forum/categories/:categoryId/subscribe` - Subscribe to a category
+  - `POST /api/forum/categories/:categoryId/unsubscribe` - Unsubscribe from a category
+  - `GET /api/forum/subscriptions` - Fetch user's subscribed categories
+  - `GET /api/forum/categories/:categoryId/is-subscribed` - Check subscription status
+- **Storage Layer**: Created helper methods (`subscribeToCategory`, `unsubscribeFromCategory`, `getUserSubscribedCategories`, `isUserSubscribed`) with idempotent behavior
+- **Frontend Hook**: `useForumSubscriptions` custom hook with React Query integration, proper authentication headers, and toast notifications
+- **Category Page UI**: Subscribe/Unsubscribe button on forum category pages with loading states and authentication guards
+- **Activity Feed Integration**: Added "Discussions" tab (4th tab) to Dashboard and ActivityFeed showing forum posts and replies from subscribed categories
+- **Activity Feed Filtering**: Extended `getActivityFeed` backend method to support 'discussions' filter, fetching forum content filtered by user's subscriptions
+- **Activity Rendering**: Added `forum_post` and `forum_reply` activity types with indigo and cyan color schemes and MessageSquare icons
+- **Category Pre-selection**: Ask Question flow automatically pre-selects category when clicked from category page via query parameter
+- **Dual Storage Architecture**: Configured `storage-methods.ts` to delegate filtered queries (discussions, following, interests) to the main `storage.ts` class for unified filtering logic
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
@@ -108,3 +125,24 @@ A smart, category-based notification system is implemented with granular user pr
 ### Environment Configuration
 
 All integrations rely on environment variables for portability, including `FIREBASE_SERVICE_ACCOUNT`, `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `EXTERNAL_DATABASE_URL` (or `DATABASE_URL`), `JWT_SECRET`, `APP_URL`, `RAZORPAY_KEY_ID`, and `RAZORPAY_KEY_SECRET`.
+
+## Replit Environment Setup (November 15, 2025)
+
+### Project Configuration
+- **Development Server**: Runs on port 5000 (0.0.0.0) with Express serving both API and frontend
+- **Frontend**: React + TypeScript + Vite with HMR enabled
+- **Backend**: Express + TypeScript with tsx for development
+- **Workflow**: Single dev-server workflow running `npm run dev`
+
+### Environment Variables (Configured in Replit Secrets)
+- `DATABASE_URL`: PostgreSQL connection string (Neon serverless database)
+- `SENDGRID_API_KEY`: Email service API key
+- `SENDGRID_FROM_EMAIL`: Verified sender email address
+- `FIREBASE_SERVICE_ACCOUNT`: Firebase Admin SDK credentials (JSON)
+- Additional configuration available in `.env` file (RAZORPAY keys, Firebase client config)
+
+### Deployment Configuration
+- **Target**: Autoscale deployment (stateless, scales automatically)
+- **Build Command**: `npm run build` (builds both frontend and backend)
+- **Run Command**: `npm start` (runs production server on port 5000)
+- **Production**: Serves static frontend from `dist/public`, API from compiled backend

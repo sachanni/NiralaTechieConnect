@@ -1,4 +1,4 @@
-import { type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type MessageReaction, type InsertMessageReaction, type ReadReceipt, type InsertReadReceipt, type Notification, type InsertNotification, type NotificationPreference, type InsertNotificationPreference, type UserCategoryInterest, type InsertUserCategoryInterest, type Job, type InsertJob, type JobApplication, type InsertJobApplication, type Idea, type InsertIdea, type IdeaInterest, type InsertIdeaInterest, type IdeaUpvote, type InsertIdeaUpvote, type IdeaComment, type InsertIdeaComment, type IdeaTeamApplication, type InsertIdeaTeamApplication, type SkillSwapSession, type InsertSkillSwapSession, type SkillSwapReview, type InsertSkillSwapReview, type Broadcast, type InsertBroadcast, type BroadcastView, type InsertBroadcastView, type AdminAction, type InsertAdminAction, type Event, type InsertEvent, type EventRsvp, type InsertEventRsvp, type EventCheckin, type InsertEventCheckin, type EventFeedback, type InsertEventFeedback, type ForumCategory, type InsertForumCategory, type ForumPost, type InsertForumPost, type ForumReply, type InsertForumReply, type ForumVote, type InsertForumVote, type ForumReport, type InsertForumReport, type LostAndFound, type InsertLostAndFound, type CommunityAnnouncement, type InsertCommunityAnnouncement, type UserService, type UserFollow, type InsertUserFollow, type ActivityInterestTopic, type InsertActivityInterestTopic, type UserActivityInterest, type InsertUserActivityInterest, type ActivityFeed, type InsertUserService, users, conversations, messages, messageReactions, readReceipts, notifications, notificationPreferences, userCategoryInterests, jobs, jobApplications, ideas, ideaInterests, ideaUpvotes, ideaComments, ideaTeamApplications, skillSwapSessions, skillSwapReviews, broadcasts, broadcastViews, adminActions, events, eventRsvps, eventCheckins, eventFeedback, forumCategories, forumPosts, forumReplies, forumVotes, forumReports, lostAndFound, communityAnnouncements, activityFeed, activityLikes, userFollows, activityInterestTopics, userActivityInterests, galleries, galleryImages, galleryLikes, userPresence, userServices, marketplaceItems, marketplaceOffers, marketplaceFavorites, marketplaceReviews, rentalItems, rentalBookings, rentalReviews, rentalFavorites, advertisements, adPayments, adAnalytics } from "@shared/schema";
+import { type User, type InsertUser, type Conversation, type InsertConversation, type Message, type InsertMessage, type MessageReaction, type InsertMessageReaction, type ReadReceipt, type InsertReadReceipt, type Notification, type InsertNotification, type NotificationPreference, type InsertNotificationPreference, type UserCategoryInterest, type InsertUserCategoryInterest, type Job, type InsertJob, type JobApplication, type InsertJobApplication, type Idea, type InsertIdea, type IdeaInterest, type InsertIdeaInterest, type IdeaUpvote, type InsertIdeaUpvote, type IdeaComment, type InsertIdeaComment, type IdeaTeamApplication, type InsertIdeaTeamApplication, type SkillSwapSession, type InsertSkillSwapSession, type SkillSwapReview, type InsertSkillSwapReview, type Broadcast, type InsertBroadcast, type BroadcastView, type InsertBroadcastView, type AdminAction, type InsertAdminAction, type Event, type InsertEvent, type EventRsvp, type InsertEventRsvp, type EventCheckin, type InsertEventCheckin, type EventFeedback, type InsertEventFeedback, type ForumCategory, type InsertForumCategory, type ForumPost, type InsertForumPost, type ForumReply, type InsertForumReply, type ForumVote, type InsertForumVote, type ForumReport, type InsertForumReport, type ForumCategorySubscription, type InsertForumCategorySubscription, type LostAndFound, type InsertLostAndFound, type CommunityAnnouncement, type InsertCommunityAnnouncement, type UserService, type UserFollow, type InsertUserFollow, type ActivityInterestTopic, type InsertActivityInterestTopic, type UserActivityInterest, type InsertUserActivityInterest, type ActivityFeed, type InsertUserService, users, conversations, messages, messageReactions, readReceipts, notifications, notificationPreferences, userCategoryInterests, jobs, jobApplications, ideas, ideaInterests, ideaUpvotes, ideaComments, ideaTeamApplications, skillSwapSessions, skillSwapReviews, broadcasts, broadcastViews, adminActions, events, eventRsvps, eventCheckins, eventFeedback, forumCategories, forumPosts, forumReplies, forumVotes, forumReports, forumCategorySubscriptions, lostAndFound, communityAnnouncements, activityFeed, activityLikes, userFollows, activityInterestTopics, userActivityInterests, galleries, galleryImages, galleryLikes, userPresence, userServices, marketplaceItems, marketplaceOffers, marketplaceFavorites, marketplaceReviews, rentalItems, rentalBookings, rentalReviews, rentalFavorites, advertisements, adPayments, adAnalytics } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { eq, and, gte, lte, like, ilike, sql, or, desc, ne } from "drizzle-orm";
@@ -355,7 +355,7 @@ export class MemStorage implements IStorage {
     return Array.from(this.users.values());
   }
 
-  async getUsersByCategory(categoryId: string, roleFilter?: 'provider' | 'seeker'): Promise<User[]> {
+  async getUsersByCategory(categoryId: string, roleFilter?: 'provider' | 'seeker'): Promise<(User & { userServices?: UserService[] })[]> {
     let results = Array.from(this.users.values());
     
     // Filter by active users only
@@ -372,7 +372,41 @@ export class MemStorage implements IStorage {
       });
     }
     
-    return results;
+    // Fetch specific services for each user in this category
+    const usersWithServices = await Promise.all(
+      results.map(async (user) => {
+        let services;
+        
+        if (roleFilter) {
+          services = await db
+            .select()
+            .from(userServices)
+            .where(
+              and(
+                eq(userServices.userId, user.id),
+                eq(userServices.categoryId, categoryId),
+                eq(userServices.roleType, roleFilter)
+              )
+            );
+        } else {
+          services = await db
+            .select()
+            .from(userServices)
+            .where(
+              and(
+                eq(userServices.userId, user.id),
+                eq(userServices.categoryId, categoryId)
+              )
+            );
+        }
+        
+        // Explicitly construct the object to ensure userServices is included
+        const userWithServices = Object.assign({}, user, { userServices: services });
+        return userWithServices;
+      })
+    );
+    
+    return usersWithServices;
   }
 
   async getOrCreateConversation(user1Id: string, user2Id: string): Promise<Conversation> {
@@ -4501,6 +4535,65 @@ export class PostgresStorage implements IStorage {
     return result[0];
   }
 
+  async subscribeToCategory(userId: string, categoryId: string): Promise<ForumCategorySubscription> {
+    const existingSubscription = await db
+      .select()
+      .from(forumCategorySubscriptions)
+      .where(
+        and(
+          eq(forumCategorySubscriptions.userId, userId),
+          eq(forumCategorySubscriptions.categoryId, categoryId)
+        )
+      )
+      .limit(1);
+
+    if (existingSubscription.length > 0) {
+      return existingSubscription[0];
+    }
+
+    const result = await db
+      .insert(forumCategorySubscriptions)
+      .values({ userId, categoryId })
+      .returning();
+
+    return result[0];
+  }
+
+  async unsubscribeFromCategory(userId: string, categoryId: string): Promise<void> {
+    await db
+      .delete(forumCategorySubscriptions)
+      .where(
+        and(
+          eq(forumCategorySubscriptions.userId, userId),
+          eq(forumCategorySubscriptions.categoryId, categoryId)
+        )
+      );
+  }
+
+  async getUserSubscribedCategories(userId: string): Promise<string[]> {
+    const result = await db
+      .select({ categoryId: forumCategorySubscriptions.categoryId })
+      .from(forumCategorySubscriptions)
+      .where(eq(forumCategorySubscriptions.userId, userId));
+
+    return result.map(row => row.categoryId);
+  }
+
+  async isUserSubscribed(userId: string, categoryId: string): Promise<boolean> {
+    const result = await db
+      .select()
+      .from(forumCategorySubscriptions)
+      .where(
+        and(
+          eq(forumCategorySubscriptions.userId, userId),
+          eq(forumCategorySubscriptions.categoryId, categoryId)
+        )
+      )
+      .limit(1);
+
+    return result.length > 0;
+  }
+
   async getLostAndFoundItems(): Promise<LostAndFound[]> {
     const result = await db
       .select()
@@ -4614,36 +4707,6 @@ export class PostgresStorage implements IStorage {
   }
 
   // Activity Feed Methods
-  async getActivityFeed(options?: { userId?: string; limit?: number; offset?: number }): Promise<Array<any>> {
-    const limit = options?.limit || 50;
-    const offset = options?.offset || 0;
-
-    let query = db
-      .select({
-        id: activityFeed.id,
-        userId: activityFeed.userId,
-        activityType: activityFeed.activityType,
-        targetType: activityFeed.targetType,
-        targetId: activityFeed.targetId,
-        content: activityFeed.content,
-        metadata: activityFeed.metadata,
-        likeCount: activityFeed.likeCount,
-        createdAt: activityFeed.createdAt,
-        user: {
-          id: users.id,
-          fullName: users.fullName,
-          profilePhotoUrl: users.profilePhotoUrl,
-        },
-      })
-      .from(activityFeed)
-      .leftJoin(users, eq(activityFeed.userId, users.id))
-      .orderBy(desc(activityFeed.createdAt))
-      .limit(limit)
-      .offset(offset);
-
-    const result = await query;
-    return result;
-  }
 
   async createActivityEntry(entry: { userId: string; activityType: string; targetType: string; targetId: string; content: string; metadata?: string }): Promise<any> {
     const result = await db
@@ -5962,8 +6025,101 @@ export class PostgresStorage implements IStorage {
   }
 
   // Enhanced Activity Feed with Filtering
-  async getActivityFeed(options?: { userId?: string; filter?: 'all' | 'following' | 'interests'; limit?: number; offset?: number }): Promise<Array<ActivityFeed & { user: User }>> {
+  async getActivityFeed(options?: { userId?: string; filter?: 'all' | 'following' | 'interests' | 'discussions'; limit?: number; offset?: number }): Promise<Array<ActivityFeed & { user: User }>> {
     const { userId, filter = 'all', limit = 20, offset = 0 } = options || {};
+
+    // Delegate 'all' filter to storage-methods which queries individual tables
+    if (filter === 'all') {
+      const { getActivityFeed: getActivityFeedFromMethods } = await import('./storage-methods');
+      return getActivityFeedFromMethods({ limit, offset });
+    }
+
+    if (filter === 'discussions' && userId) {
+      const subscribedCategories = await this.getUserSubscribedCategories(userId);
+      
+      if (subscribedCategories.length === 0) {
+        return [];
+      }
+
+      const posts = await db
+        .select({
+          post: forumPosts,
+          user: users,
+          category: forumCategories,
+        })
+        .from(forumPosts)
+        .innerJoin(users, eq(forumPosts.authorId, users.id))
+        .innerJoin(forumCategories, eq(forumPosts.categoryId, forumCategories.id))
+        .where(
+          or(...subscribedCategories.map(catId => eq(forumPosts.categoryId, catId)))
+        )
+        .orderBy(desc(forumPosts.createdAt))
+        .limit(limit * 2);
+
+      const replies = await db
+        .select({
+          reply: forumReplies,
+          user: users,
+          post: forumPosts,
+        })
+        .from(forumReplies)
+        .innerJoin(users, eq(forumReplies.authorId, users.id))
+        .innerJoin(forumPosts, eq(forumReplies.postId, forumPosts.id))
+        .where(
+          or(...subscribedCategories.map(catId => eq(forumPosts.categoryId, catId)))
+        )
+        .orderBy(desc(forumReplies.createdAt))
+        .limit(limit * 2);
+
+      const postActivities = posts.map(p => ({
+        id: p.post.id,
+        userId: p.post.authorId,
+        activityType: 'forum_post',
+        targetType: 'post',
+        targetId: p.post.id,
+        content: p.post.title,
+        metadata: JSON.stringify({
+          categoryId: p.post.categoryId,
+          slug: p.category.slug,
+          replyCount: p.post.replyCount,
+        }),
+        likeCount: 0,
+        createdAt: p.post.createdAt,
+        user: p.user,
+        userName: p.user.fullName,
+        userPhoto: p.user.profilePhotoUrl,
+        title: p.post.title,
+        description: p.post.content.substring(0, 200),
+        type: 'forum_post',
+      }));
+
+      const replyActivities = replies.map(r => ({
+        id: r.reply.id,
+        userId: r.reply.authorId,
+        activityType: 'forum_reply',
+        targetType: 'reply',
+        targetId: r.reply.id,
+        content: r.reply.content.substring(0, 200),
+        metadata: JSON.stringify({
+          postId: r.reply.postId,
+          postTitle: r.post.title,
+        }),
+        likeCount: 0,
+        createdAt: r.reply.createdAt,
+        user: r.user,
+        userName: r.user.fullName,
+        userPhoto: r.user.profilePhotoUrl,
+        title: `Reply to: ${r.post.title}`,
+        description: r.reply.content.substring(0, 200),
+        type: 'forum_reply',
+      }));
+
+      const combined = [...postActivities, ...replyActivities]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(offset, offset + limit);
+
+      return combined;
+    }
 
     let query = db
       .select({

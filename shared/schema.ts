@@ -578,6 +578,15 @@ export const forumReports = pgTable("forum_reports", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const forumCategorySubscriptions = pgTable("forum_category_subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  categoryId: varchar("category_id").notNull().references(() => forumCategories.id, { onDelete: 'cascade' }),
+  subscribedAt: timestamp("subscribed_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserCategory: sql`UNIQUE(user_id, category_id)`,
+}));
+
 export const insertForumCategorySchema = createInsertSchema(forumCategories).omit({
   id: true,
   postCount: true,
@@ -617,6 +626,11 @@ export const insertForumReportSchema = createInsertSchema(forumReports).omit({
   createdAt: true,
 });
 
+export const insertForumCategorySubscriptionSchema = createInsertSchema(forumCategorySubscriptions).omit({
+  id: true,
+  subscribedAt: true,
+});
+
 export type InsertForumCategory = z.infer<typeof insertForumCategorySchema>;
 export type ForumCategory = typeof forumCategories.$inferSelect;
 export type InsertForumPost = z.infer<typeof insertForumPostSchema>;
@@ -627,6 +641,8 @@ export type InsertForumVote = z.infer<typeof insertForumVoteSchema>;
 export type ForumVote = typeof forumVotes.$inferSelect;
 export type InsertForumReport = z.infer<typeof insertForumReportSchema>;
 export type ForumReport = typeof forumReports.$inferSelect;
+export type InsertForumCategorySubscription = z.infer<typeof insertForumCategorySubscriptionSchema>;
+export type ForumCategorySubscription = typeof forumCategorySubscriptions.$inferSelect;
 
 export const discussionThreads = pgTable("discussion_threads", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -36,21 +36,24 @@ interface TechStackSelectorProps {
 
 export default function TechStackSelector({ selected, onChange }: TechStackSelectorProps) {
   const [search, setSearch] = useState('');
+  
+  // Ensure selected is always an array (handle null/undefined)
+  const safeSelected = selected || [];
 
   const filteredStacks = TECH_STACKS.filter(stack =>
     stack.name.toLowerCase().includes(search.toLowerCase())
   );
 
   const toggleStack = (stackName: string) => {
-    if (selected.includes(stackName)) {
-      onChange(selected.filter(s => s !== stackName));
+    if (safeSelected.includes(stackName)) {
+      onChange(safeSelected.filter(s => s !== stackName));
     } else {
-      onChange([...selected, stackName]);
+      onChange([...safeSelected, stackName]);
     }
   };
 
   const removeStack = (stackName: string) => {
-    onChange(selected.filter(s => s !== stackName));
+    onChange(safeSelected.filter(s => s !== stackName));
   };
 
   return (
@@ -71,9 +74,9 @@ export default function TechStackSelector({ selected, onChange }: TechStackSelec
         </div>
       </div>
 
-      {selected.length > 0 && (
+      {safeSelected.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {selected.map((stack) => (
+          {safeSelected.map((stack) => (
             <Badge
               key={stack}
               variant="secondary"
@@ -98,7 +101,7 @@ export default function TechStackSelector({ selected, onChange }: TechStackSelec
           {filteredStacks.map((stack) => (
             <Badge
               key={stack.name}
-              variant={selected.includes(stack.name) ? "default" : "outline"}
+              variant={safeSelected.includes(stack.name) ? "default" : "outline"}
               className="h-8 px-3 cursor-pointer hover-elevate active-elevate-2"
               onClick={() => toggleStack(stack.name)}
               data-testid={`badge-option-${stack.name}`}

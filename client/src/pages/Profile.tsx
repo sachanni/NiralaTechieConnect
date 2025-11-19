@@ -127,6 +127,20 @@ export default function Profile({ user: initialUser, userId, idToken }: ProfileP
     enabled: !!idToken,
   });
 
+  const { data: myOrganizedEventsData } = useQuery<{ events: any[] }>({
+    queryKey: ['my-organized-events'],
+    queryFn: async () => {
+      const response = await fetch('/api/events/my-events', {
+        headers: {
+          'Authorization': `Bearer ${idToken}`
+        }
+      });
+      if (!response.ok) return { events: [] };
+      return response.json();
+    },
+    enabled: !!idToken,
+  });
+
   const { data: forumCountData } = useQuery<{ myPosts: number, myAnswers: number }>({
     queryKey: ['myForumCount'],
     queryFn: async () => {
@@ -171,9 +185,14 @@ export default function Profile({ user: initialUser, userId, idToken }: ProfileP
   const totalJobs = (jobCountData?.postedJobs || 0) + (jobCountData?.appliedJobs || 0);
   const totalIdeas = (ideasData?.postedIdeas || 0) + (ideasData?.interestedIdeas || 0);
   const totalForumActivity = (forumCountData?.myPosts || 0) + (forumCountData?.myAnswers || 0);
-  const myUpcomingEventsCount = eventsData?.rsvps?.filter((r: any) => {
+  const myUpcomingEventsCount = myOrganizedEventsData?.events?.filter((event: any) => {
     try {
-      return new Date(r.event.eventDate) >= new Date();
+      if (event.status !== 'upcoming') return false;
+      const eventDate = new Date(event.eventDate);
+      const today = new Date();
+      eventDate.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+      return eventDate >= today;
     } catch {
       return false;
     }
@@ -314,7 +333,7 @@ export default function Profile({ user: initialUser, userId, idToken }: ProfileP
                 <div className="text-sm text-muted-foreground mt-1">Points</div>
               </div>
               <div className="text-center p-4 rounded-lg bg-purple-50 border border-purple-100">
-                <div className="text-3xl font-bold text-purple-600">{user.badges.length}</div>
+                <div className="text-3xl font-bold text-purple-600">{user.badges?.length || 0}</div>
                 <div className="text-sm text-muted-foreground mt-1">Badges</div>
               </div>
               <div className="text-center p-4 rounded-lg bg-green-50 border border-green-100">
@@ -342,11 +361,15 @@ export default function Profile({ user: initialUser, userId, idToken }: ProfileP
               <div>
                 <h4 className="text-sm font-semibold mb-3 text-muted-foreground">Tech Stack</h4>
                 <div className="flex flex-wrap gap-2">
-                  {user.techStack.map((tech) => (
-                    <Badge key={tech} variant="secondary" className="font-mono">
-                      {tech}
-                    </Badge>
-                  ))}
+                  {user.techStack && user.techStack.length > 0 ? (
+                    user.techStack.map((tech) => (
+                      <Badge key={tech} variant="secondary" className="font-mono">
+                        {tech}
+                      </Badge>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No tech stack added yet</p>
+                  )}
                 </div>
               </div>
 
@@ -582,7 +605,7 @@ export default function Profile({ user: initialUser, userId, idToken }: ProfileP
           </CardContent>
         </Card>
 
-        {user.badges.length > 0 && (
+        {user.badges && user.badges.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

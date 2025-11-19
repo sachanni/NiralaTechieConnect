@@ -7,8 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
-import { MessageSquare, ThumbsUp, Eye, Check, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { MessageSquare, ThumbsUp, Eye, Check, Plus, ChevronLeft, ChevronRight, Bell, BellOff } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useForumSubscriptions } from "@/hooks/useForumSubscriptions";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Category {
   id: string;
@@ -44,9 +46,11 @@ type FilterOption = "recent" | "trending" | "unanswered" | "answered";
 type SortOption = "newest" | "most_voted" | "most_replied";
 
 export default function ForumCategory() {
-  const [match] = useRoute("/forum/category/:slug");
-  const slug = match ? (match as any).slug : "";
+  const [match, params] = useRoute("/forum/category/:slug");
+  const slug = params?.slug || "";
   const [, navigate] = useLocation();
+  const { user } = useAuth();
+  const { isSubscribed, toggleSubscription, isLoading: subscriptionLoading } = useForumSubscriptions();
 
   const [filter, setFilter] = useState<FilterOption>("recent");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
@@ -171,12 +175,39 @@ export default function ForumCategory() {
               </div>
               <p className="text-muted-foreground">{category.description}</p>
             </div>
-            <Link href="/forum/ask">
-              <Button className="w-full md:w-auto">
-                <Plus className="w-4 h-4 mr-2" />
-                Ask Question
-              </Button>
-            </Link>
+            <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+              {user && (
+                <Button
+                  variant={isSubscribed(category.id) ? "outline" : "secondary"}
+                  onClick={() => toggleSubscription(category.id)}
+                  disabled={subscriptionLoading}
+                  className="w-full md:w-auto"
+                >
+                  {subscriptionLoading ? (
+                    <>
+                      <div className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      {isSubscribed(category.id) ? "Unsubscribing..." : "Subscribing..."}
+                    </>
+                  ) : isSubscribed(category.id) ? (
+                    <>
+                      <BellOff className="w-4 h-4 mr-2" />
+                      Unsubscribe
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="w-4 h-4 mr-2" />
+                      Subscribe
+                    </>
+                  )}
+                </Button>
+              )}
+              <Link href={`/forum/ask?category=${category.slug}`}>
+                <Button className="w-full md:w-auto">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Ask Question
+                </Button>
+              </Link>
+            </div>
           </div>
 
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
@@ -325,7 +356,7 @@ export default function ForumCategory() {
             <p className="text-muted-foreground mb-4">
               Be the first to ask a question in this category!
             </p>
-            <Link href="/forum/ask">
+            <Link href={`/forum/ask?category=${category.slug}`}>
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
                 Ask Question
@@ -335,7 +366,7 @@ export default function ForumCategory() {
         )}
       </div>
 
-      <Link href="/forum/ask">
+      <Link href={`/forum/ask?category=${category.slug}`}>
         <Button
           className="fixed bottom-6 right-6 md:hidden rounded-full w-14 h-14 shadow-lg"
           size="icon"
